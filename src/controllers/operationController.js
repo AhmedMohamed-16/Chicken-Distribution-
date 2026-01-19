@@ -363,4 +363,108 @@ exports.closeDailyOperation = async (req, res) => {
   }
 };
 
+ 
+// Get chicken types
+exports.getChickenTypes = async (req, res) => {
+  try {
+    const { ChickenType } = require('../models');
+    const types = await ChickenType.findAll({
+      order: [['name', 'ASC']]
+    });
+
+    res.json({
+      success: true,
+      data: types
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching chicken types'
+    });
+  }
+};
+
+// Create chicken type
+exports.createChickenType = async (req, res) => {
+  try {
+    const { ChickenType } = require('../models');
+    const type = await ChickenType.create(req.body);
+
+    res.status(201).json({
+      success: true,
+      data: type
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error creating chicken type'
+    });
+  }
+};
+
+// Get cost categories
+exports.getCostCategories = async (req, res) => {
+  try {
+    const { CostCategory } = require('../models');
+    const categories = await CostCategory.findAll({
+      order: [['name', 'ASC']]
+    });
+
+    res.json({
+      success: true,
+      data: categories
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching cost categories'
+    });
+  }
+};
+
+// Create cost category
+exports.createCostCategory = async (req, res) => {
+  try {
+    const { CostCategory } = require('../models');
+    const category = await CostCategory.create(req.body);
+
+    res.status(201).json({
+      success: true,
+      data: category
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error creating cost category'
+    });
+  }
+};
+
+// Get operation by date
+exports.getOperationByDate = async (req, res) => {
+  try {
+    const { DailyOperation, Vehicle } = require('../models');
+    const operation = await DailyOperation.findOne({
+      where: { operation_date: req.params.date },
+      include: [{ model: Vehicle }]
+    });
+
+    if (!operation) {
+      return res.status(404).json({
+        success: false,
+        message: 'No operation found for this date'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: operation
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching operation'
+    });
+  }
+};
 module.exports = exports;
