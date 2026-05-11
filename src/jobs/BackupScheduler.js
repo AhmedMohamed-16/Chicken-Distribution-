@@ -10,6 +10,7 @@ const { createBackup, cleanOldBackups ,hasMonthlyBackup} = require('../services/
  * Schedule monthly backup
  * Runs on the 1st day of every month at 00:00 (midnight)
  */
+const scheduleMonthlyBackup = () => {
 const monthlyBackupJob = cron.schedule('0 0 1 * *', async () => {
   console.log('\n========================================');
   console.log('Scheduled Monthly Backup Starting...');
@@ -50,6 +51,11 @@ const monthlyBackupJob = cron.schedule('0 0 1 * *', async () => {
   scheduled: true,
   timezone: 'Africa/Cairo'
 });
+  console.log('✓ Monthly backup scheduler initialized');
+  console.log('  Schedule: 1st of every month at 00:00 UTC'); 
+
+  return monthlyBackupJob;
+};
 
 /**
  * Schedule daily cleanup of old backups

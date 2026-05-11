@@ -282,10 +282,10 @@ const getSyncOrder = () => {
     // Level 1: No dependencies
     User,
     Partner,
+    Safe,
     Vehicle,
     Farm,
     Buyer,
-    Safe,
     ChickenType,
     CostCategory,
     Permission,
