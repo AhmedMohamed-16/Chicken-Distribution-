@@ -14,11 +14,8 @@ const Permission = sequelize.define('Permission', {
   key: {
     type: DataTypes.STRING(100),
     allowNull: false,
-    unique: true,
     validate: {
-      notEmpty: {
-        msg: 'Permission key is required'
-      },
+      notEmpty: { msg: 'Permission key is required' },
       is: {
         args: /^[A-Z_]+$/,
         msg: 'Permission key must be uppercase letters and underscores only'
@@ -29,11 +26,7 @@ const Permission = sequelize.define('Permission', {
   name: {
     type: DataTypes.STRING(100),
     allowNull: false,
-    validate: {
-      notEmpty: {
-        msg: 'Permission name is required'
-      }
-    },
+    validate: { notEmpty: { msg: 'Permission name is required' } },
     comment: 'Human-readable name for the permission'
   },
   description: {
@@ -47,7 +40,10 @@ const Permission = sequelize.define('Permission', {
     defaultValue: 'GENERAL',
     validate: {
       isIn: {
-        args: [['FARMS', 'BUYERS', 'VEHICLES', 'OPERATIONS', 'REPORTS', 'USERS', 'PARTNERS', 'GENERAL']],
+        args: [[
+          'النظام', 'المستخدمين', 'الشركاء', 'المزارع', 'محلات الفراخ',
+          'المركبات', 'الدواجن', 'التكاليف', 'العمليات', 'التقارير', 'اغلاق اليوم'
+        ]],
         msg: 'Invalid permission category'
       }
     },
@@ -63,19 +59,13 @@ const Permission = sequelize.define('Permission', {
   timestamps: true,
   createdAt: 'created_at',
   updatedAt: 'updated_at',
-  indexes: [
-    {
-      unique: true,
-      fields: ['key']
-    },
-    {
-      fields: ['category']
-    },
-    {
-      fields: ['is_active']
-    }
+  indexes: [ 
+    { unique: true, fields: ['key'] },
+    { fields: ['category'] },
+    { fields: ['is_active'] }
   ]
 });
+
 
 /**
  * Class Methods

@@ -1,4 +1,5 @@
-const { Partner, Vehicle, VehiclePartner, sequelize ,recalculateAllPercentages} = require('../models');
+const { Partner, Vehicle, VehiclePartner, Safe, FinancialTransaction, sequelize, recalculateAllPercentages } = require('../models');
+const { logTransaction } = require('../utils/transactionLogger');
 const { Op } = require('sequelize');
 
 /**
@@ -18,7 +19,6 @@ exports.getAllPartners = async (req, res) => {
       }],
       order: [['name', 'ASC']]
     });
-
     // Calculate total vehicle investments for each partner
     const partnersWithVehicleData = partners.map(partner => {
       const partnerData = partner.toJSON();
@@ -29,6 +29,9 @@ exports.getAllPartners = async (req, res) => {
         const vehicleValue = parseFloat(vehicle.purchase_price || 0);
         return sum + (vehicleValue * sharePercentage / 100);
       }, 0) || 0;
+
+console.log("partners, partners, partners",partnerData);
+
 
       return {
         ...partnerData,
@@ -117,21 +120,53 @@ exports.getPartnerById = async (req, res) => {
  */
 exports.createPartner = async (req, res) => {
   const transaction = await sequelize.transaction();
-  
+
   try {
-    const { vehicle_shares, ...partnerData } = req.body;
+    const { vehicle_shares, payment_method, safe_id, ...partnerData } = req.body;
 
     // Create partner
     const partner = await Partner.create(partnerData, { transaction });
+
+    // Handle investment amount in safe
+    const investmentAmount = parseFloat(partnerData.investment_amount) || 0;
+    if (investmentAmount > 0 && safe_id) {
+      const safe = await Safe.findByPk(safe_id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!safe) {
+        await transaction.rollback();
+        return res.status(404).json({
+          success: false,
+          message: 'الخزنة المحددة غير موجودة'
+        });
+      }
+
+      // Add investment amount to safe (money coming IN from partner)
+      await safe.updateBalance(investmentAmount, transaction);
+
+      // Log financial transaction
+      await logTransaction({
+        transaction_type: 'PARTNER_INVESTMENT',
+        direction: 'IN',
+        amount: investmentAmount,
+        payment_source_type: 'SAFE',
+        payment_source_id: safe_id,
+        reference_type: 'Partner',
+        reference_id: partner.id,
+        performed_by_user_id: req.user?.id,
+        payment_method: payment_method || 'CASH',
+        received_by_person_type: 'PARTNER',
+        received_by_person_id: partner.id,
+        notes: `استثمار شريك: ${partner.name} - مبلغ ${investmentAmount} ج.م`
+      }, transaction);
+    }
 
     // If vehicle shares are provided, create vehicle-partner relationships
     if (vehicle_shares && Array.isArray(vehicle_shares) && vehicle_shares.length > 0) {
       // Validate total shares per vehicle don't exceed 100%
       const vehicleShareTotals = {};
-      
+
       for (const share of vehicle_shares) {
         const { vehicle_id, share_percentage } = share;
-        
+
         // Get existing shares for this vehicle
         const existingShares = await VehiclePartner.findAll({
           where: { vehicle_id },
@@ -159,6 +194,9 @@ exports.createPartner = async (req, res) => {
 
       // Update is_vehicle_partner flag
       await partner.update({ is_vehicle_partner: true }, { transaction });
+
+      // Recalculate percentages because vehicle shares changed
+      await recalculateAllPercentages(transaction);
     }
 
     await transaction.commit();
@@ -192,11 +230,11 @@ exports.createPartner = async (req, res) => {
  */
 exports.updatePartner = async (req, res) => {
   const transaction = await sequelize.transaction();
-  
+
   try {
-    const { vehicle_shares, ...partnerData } = req.body;
-    
-    const partner = await Partner.findByPk(req.params.id);
+    const { vehicle_shares, payment_method, safe_id, ...partnerData } = req.body;
+
+    const partner = await Partner.findByPk(req.params.id, { transaction });
 
     if (!partner) {
       await transaction.rollback();
@@ -204,6 +242,72 @@ exports.updatePartner = async (req, res) => {
         success: false,
         message: 'Partner not found'
       });
+    }
+
+    // Store original investment amount for delta calculation
+    const originalInvestment = parseFloat(partner.investment_amount) || 0;
+    const newInvestment = parseFloat(partnerData.investment_amount) || 0;
+    const investmentDelta = newInvestment - originalInvestment;
+
+    // Handle investment change with safe balance
+    if (investmentDelta !== 0 && safe_id) {
+      const safe = await Safe.findByPk(safe_id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!safe) {
+        await transaction.rollback();
+        return res.status(404).json({
+          success: false,
+          message: 'الخزنة المحددة غير موجودة'
+        });
+      }
+
+      if (investmentDelta > 0) {
+        // Partner increased investment: money comes IN to safe
+        await safe.updateBalance(investmentDelta, transaction);
+
+        await logTransaction({
+          transaction_type: 'PARTNER_INVESTMENT',
+          direction: 'IN',
+          amount: investmentDelta,
+          payment_source_type: 'SAFE',
+          payment_source_id: safe_id,
+          reference_type: 'Partner',
+          reference_id: partner.id,
+          performed_by_user_id: req.user?.id,
+          payment_method: payment_method || 'CASH',
+          received_by_person_type: 'PARTNER',
+          received_by_person_id: partner.id,
+          notes: `زيادة استثمار شريك: ${partner.name} - مبلغ ${investmentDelta} ج.م`
+        }, transaction);
+      } else {
+        // Partner decreased investment: money goes OUT from safe (refund)
+        const refundAmount = Math.abs(investmentDelta);
+
+        // Check safe has enough balance for refund
+        if (parseFloat(safe.current_balance) < refundAmount) {
+          await transaction.rollback();
+          return res.status(400).json({
+            success: false,
+            message: 'رصيد الخزنة غير كافٍ لاسترداد مبلغ الاستثمار'
+          });
+        }
+
+        await safe.updateBalance(-refundAmount, transaction);
+
+        await logTransaction({
+          transaction_type: 'PARTNER_INVESTMENT',
+          direction: 'OUT',
+          amount: refundAmount,
+          payment_source_type: 'SAFE',
+          payment_source_id: safe_id,
+          reference_type: 'Partner',
+          reference_id: partner.id,
+          performed_by_user_id: req.user?.id,
+          payment_method: payment_method || 'CASH',
+          paid_by_person_type: 'PARTNER',
+          paid_by_person_id: partner.id,
+          notes: `تخفيض استثمار شريك: ${partner.name} - استرداد ${refundAmount} ج.م`
+        }, transaction);
+      }
     }
 
     // Update partner basic data
@@ -224,10 +328,10 @@ exports.updatePartner = async (req, res) => {
       if (Array.isArray(vehicle_shares) && vehicle_shares.length > 0) {
         for (const share of vehicle_shares) {
           const { vehicle_id, share_percentage } = share;
-          
+
           // Validate share doesn't exceed 100% for this vehicle
           const existingShares = await VehiclePartner.findAll({
-            where: { 
+            where: {
               vehicle_id,
               partner_id: { [Op.ne]: partner.id }
             },
@@ -256,6 +360,9 @@ exports.updatePartner = async (req, res) => {
       } else {
         await partner.update({ is_vehicle_partner: false }, { transaction });
       }
+
+      // Recalculate percentages because vehicle shares changed
+      await recalculateAllPercentages(transaction);
     }
 
     await transaction.commit();

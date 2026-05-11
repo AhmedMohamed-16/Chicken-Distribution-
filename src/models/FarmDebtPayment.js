@@ -54,16 +54,30 @@ const FarmDebtPayment = sequelize.define('FarmDebtPayment', {
         args: [['FROM_FARM', 'TO_FARM']],
         msg: 'Payment direction must be FROM_FARM or TO_FARM'
       }
-    },
-    comment: 'FROM_FARM = Farm pays us (reduces receivable/increases payable), TO_FARM = We pay farm (increases receivable/reduces payable)'
+    }
+    // Avoid setting a comment to prevent migration SQL bug that combines COMMENT with USING
   },
   notes: {
     type: DataTypes.TEXT,
     allowNull: true
+  },
+  payment_method: {
+    type: DataTypes.ENUM('CASH', 'INSTAPAY', 'BANK', 'VODAFONE_CASH'),
+    defaultValue: 'CASH',
+    allowNull: true
+  },
+  payment_source_type: {
+    type: DataTypes.ENUM('SAFE', 'CUSTODY'),
+    allowNull: false,
+    defaultValue: 'SAFE'
+  },
+  payment_source_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
   }
 }, {
   tableName: 'farm_debt_payments',
-  ttimestamps: true,
+  timestamps: true,
 createdAt: 'payment_date',
 updatedAt: false,
 underscored: true,
@@ -75,6 +89,10 @@ underscored: true,
     {
       name: 'idx_farm_payments_operation',
       fields: ['daily_operation_id']
+    },
+    {
+      name: 'idx_farm_payments_source',
+      fields: ['payment_source_type', 'payment_source_id']
     }
   ],
   

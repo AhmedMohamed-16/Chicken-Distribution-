@@ -3,7 +3,7 @@
 // Handles foreign key constraints properly
 // ========================================
 
-const { sequelize, testConnection, getDatabaseInfo } = require('./config/database');
+const { sequelize, testConnection, getDatabaseInfo } = require('./database');
 require('dotenv').config();
 
 const colors = {
@@ -34,17 +34,10 @@ async function migrate() {
       process.exit(1);
     }
 
-    // Get database info
-    const dbInfo = await getDatabaseInfo();
-    if (dbInfo) {
-      log(`   PostgreSQL: ${dbInfo.pg_version.split(',')[0]}`, 'yellow');
-      log(`   Database: ${dbInfo.db_name}`, 'yellow');
-      log(`   User: ${dbInfo.user}`, 'yellow');
-    }
-
+    
     // Step 2: Import all models
     log('\n📦 Step 2: Loading models...', 'blue');
-    const { syncModels } = require('./models');
+    const { syncModels } = require('../models');
     log('   ✅ All models and associations loaded', 'green');
 
     // Step 3: Sync database

@@ -3,6 +3,7 @@ const { Farm, FarmTransaction, FarmDebtPayment, DailyOperation, ChickenType } = 
 const { sequelize } = require('../config/database');
 const { Op } = require('sequelize');
 const AppError = require('../utils/app-error.utility');
+const { round2 } = require('../utils/financialUtils');
 
 exports.getAllFarms = async (req, res,next) => {
   try {
@@ -358,17 +359,29 @@ exports.deleteFarm = async (req, res,next) => {
 exports.getFarmDebtHistory = async (req, res, next) => {
   try {
     const { id } = req.params;
-    // default: آخر 7 معاملات، أو اللي اليوزر يحدده
     const limit = parseInt(req.query.limit) || 7;
+    const { startDate, endDate } = req.query;
 
     const farm = await Farm.findByPk(id);
     if (!farm) {
       return next(new AppError('لم يتم العثور على المزرعة', 404));
     }
 
-    // جلب آخر N معاملة فقط
+    const whereTransactions = { farm_id: id };
+    const wherePayments = { farm_id: id };
+
+    if (startDate || endDate) {
+      const dateFilter = {};
+      if (startDate) dateFilter[Op.gte] = new Date(startDate);
+      if (endDate)   dateFilter[Op.lte] = new Date(endDate);
+      
+      whereTransactions.transaction_time = dateFilter;
+      wherePayments.payment_date = dateFilter;
+    }
+
+    // Fetch transactions
     const transactions = await FarmTransaction.findAll({
-      where: { farm_id: id },
+      where: whereTransactions,
       include: [
         {
           model: DailyOperation,
@@ -377,12 +390,12 @@ exports.getFarmDebtHistory = async (req, res, next) => {
         }
       ],
       order: [['transaction_time', 'DESC']],
-      limit: limit
+      limit: startDate || endDate ? undefined : limit
     });
 
-    // جلب آخر N دفعة فقط
+    // Fetch payments
     const payments = await FarmDebtPayment.findAll({
-      where: { farm_id: id },
+      where: wherePayments,
       include: [
         {
           model: DailyOperation,
@@ -392,27 +405,30 @@ exports.getFarmDebtHistory = async (req, res, next) => {
         }
       ],
       order: [['payment_date', 'DESC']],
-      limit: limit
+      limit: startDate || endDate ? undefined : limit
     });
 
-    // دمج الأحداث
     const events = [];
 
     transactions.forEach(t => {
+      const remainingAmount = round2(parseFloat(t.remaining_amount) || 0);
       events.push({
         date: t.transaction_time,
         type: 'transaction',
         transaction_id: t.id,
-        total_amount: parseFloat(t.total_amount),
-        paid_amount: parseFloat(t.paid_amount),
-        remaining_amount: parseFloat(t.remaining_amount),
+        total_amount: round2(parseFloat(t.total_amount) || 0),
+        paid_amount: round2(parseFloat(t.paid_amount) || 0),
+        remaining_amount: remainingAmount,
+        balance_impact: remainingAmount, // Debt increases by remaining_amount
+        operation_date: t.operation?.operation_date || null,
         raw_data: t
       });
     });
 
     payments.forEach(p => {
-      const amount = parseFloat(p.amount);
+      const amount = round2(parseFloat(p.amount) || 0);
       const direction = p.payment_direction;
+      const balanceImpact = direction === 'FROM_FARM' ? -amount : amount;
       
       events.push({
         date: p.payment_date,
@@ -420,78 +436,101 @@ exports.getFarmDebtHistory = async (req, res, next) => {
         payment_id: p.id,
         amount: amount,
         payment_direction: direction,
-        debt_impact: direction === 'FROM_FARM' ? -amount : amount,
+        balance_impact: balanceImpact,
+        operation_date: p.operation?.operation_date || null,
         raw_data: p
       });
     });
 
-    // ترتيب من الأحدث للأقدم
-    events.sort((a, b) => new Date(b.date)- new Date(a.date));
+    // Sort newest → oldest
+    events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    const recentEvents = startDate || endDate ? events : events.slice(0, limit);
 
-    // أخذ آخر N حدث فقط بعد الدمج
-    const recentEvents = events.slice(0, limit);
+    // Reconstruct balance walking BACKWARDS
+    let cumulativeBalance = round2(parseFloat(farm.current_balance) || 0);
 
-    // حساب الرصيد التراكمي
-    // نبدأ من الرصيد الحالي ونرجع للخلف
-    let cumulativeDebt = parseFloat(farm.current_balance);
-    
+    if (endDate) {
+      // Calculate impact of everything AFTER endDate
+      const futureTransactions = await FarmTransaction.findAll({
+        where: {
+          farm_id: id,
+          transaction_time: { [Op.gt]: new Date(endDate) }
+        }
+      });
+      const futurePayments = await FarmDebtPayment.findAll({
+        where: {
+          farm_id: id,
+          payment_date: { [Op.gt]: new Date(endDate) }
+        }
+      });
+
+      let futureImpact = 0;
+      futureTransactions.forEach(t => {
+        futureImpact += round2(parseFloat(t.remaining_amount) || 0);
+      });
+      futurePayments.forEach(p => {
+        const amt = round2(parseFloat(p.amount) || 0);
+        futureImpact += (p.payment_direction === 'FROM_FARM' ? -amt : amt);
+      });
+
+      cumulativeBalance = round2(cumulativeBalance - futureImpact);
+    }
+
     const history = recentEvents.map(event => {
-      const debtBefore = cumulativeDebt;
-      
+      const balanceAfter = cumulativeBalance;
+      cumulativeBalance = round2(cumulativeBalance - event.balance_impact);
+      const balanceBefore = cumulativeBalance;
+
+      const baseEvent = {
+        date:             event.date,
+        balance_before:   balanceBefore,
+        balance_change:   event.balance_impact,
+        balance_after:    balanceAfter,
+        operation_date:   event.operation_date,
+        raw_data:         event.raw_data
+      };
+
       if (event.type === 'transaction') {
-        // عند الرجوع للخلف، نطرح الدين اللي اتضاف
-        cumulativeDebt -= event.remaining_amount;
-        
         return {
-          date: event.date,
-          type: 'transaction',
-          transaction_id: event.transaction_id,
-          total_amount: event.total_amount,
-          paid_amount: event.paid_amount,
-          remaining_amount: event.remaining_amount,
-          debt_before: cumulativeDebt,
-          debt_change: event.remaining_amount,
-          debt_after: debtBefore,
-          raw_data: event.raw_data
+          ...baseEvent,
+          type:             'transaction',
+          transaction_id:   event.transaction_id,
+          total_amount:     event.total_amount,
+          paid_amount:      event.paid_amount,
+          remaining_amount: event.remaining_amount
         };
       } else {
-        // عند الرجوع للخلف، نعكس تأثير الدفعة
-        cumulativeDebt -= event.debt_impact;
-        
         return {
-          date: event.date,
-          type: 'payment',
-          payment_id: event.payment_id,
-          amount: event.amount,
+          ...baseEvent,
+          type:              'payment',
+          payment_id:        event.payment_id,
+          amount:            event.amount,
           payment_direction: event.payment_direction,
-          debt_before: cumulativeDebt,
-          debt_change: event.debt_impact,
-          debt_after: debtBefore,
-          raw_data: event.raw_data
+          direction_arabic:  event.payment_direction === 'FROM_FARM' ? 'استلمنا من المزرعة' : 'دفعنا للمزرعة'
         };
       }
     });
 
-    // ترتيب من الأقدم للأحدث في النهاية (زي ما كان)
-    history.sort((a, b) => new Date(a.date) - new Date(b.date));
+    // Sort oldest → newest for output
+    history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    // حساب الـ calculated_balance من أول سجل في الـ history
-    const calculatedBalance = history.length > 0 
-      ? history[history.length - 1].debt_after 
-      : parseFloat(farm.current_balance);
+    const openingBalance = history.length > 0 ? history[history.length - 1].balance_before : cumulativeBalance;
+    const calculatedBalance = history.length > 0 ? history[history.length - 1].balance_after : cumulativeBalance;
+    const currentBalance = round2(parseFloat(farm.current_balance) || 0);
 
     res.json({
       success: true,
       data: {
         farm,
-        current_balance: parseFloat(farm.current_balance),
+        current_balance: currentBalance,
+        opening_balance: openingBalance,
         calculated_balance: calculatedBalance,
         history,
         summary: {
           total_purchases: transactions.length,
           total_payments: payments.length,
-          total_amount_purchased: transactions.reduce((sum, t) => sum + parseFloat(t.total_amount), 0),
-          total_amount_paid: transactions.reduce((sum, t) => sum + parseFloat(t.paid_amount), 0)
+          total_amount_purchased: round2(transactions.reduce((sum, t) => sum + round2(parseFloat(t.total_amount) || 0), 0)),
+          total_amount_paid: round2(transactions.reduce((sum, t) => sum + round2(parseFloat(t.paid_amount) || 0), 0) + payments.reduce((sum, p) => sum + round2(parseFloat(p.amount) || 0), 0))
         }
       }
     });
@@ -500,6 +539,7 @@ exports.getFarmDebtHistory = async (req, res, next) => {
     next(new AppError('خطأ في جلب سجل الديون', 500));
   }
 };
+
 exports.recordDebtPayment = async (req, res) => {
   const transaction = await sequelize.transaction();
 
@@ -537,6 +577,83 @@ exports.recordDebtPayment = async (req, res) => {
   } catch (error) {
     await transaction.rollback();
 next(new AppError( 'خطأ في جلب سجل الديون'));
+  }
+};
+
+/**
+ * Get farms with active balances (non-zero)
+ * (Receivables + Payables)
+ */
+exports.getActiveBalances = async (req, res, next) => {
+  try {
+    const farms = await Farm.getActiveBalances();
+
+    res.json({
+      success: true,
+      count: farms.length,
+      data: farms
+    });
+
+  } catch (error) {
+    next(new AppError('حدث خطأ أثناء جلب الأرصدة النشطة'));
+  }
+};
+
+
+/**
+ * Get farms that owe us money (Receivables)
+ * current_balance > 0
+ */
+exports.getReceivables = async (req, res, next) => {
+  try {
+    const farms = await Farm.getReceivables();
+
+    res.json({
+      success: true,
+      count: farms.length,
+      data: farms
+    });
+
+  } catch (error) {
+    next(new AppError('حدث خطأ أثناء جلب المديونيات'));
+  }
+};
+
+
+/**
+ * Get farms we owe money to (Payables)
+ * current_balance < 0
+ */
+exports.getPayables = async (req, res, next) => {
+  try {
+    const farms = await Farm.getPayables();
+
+    res.json({
+      success: true,
+      count: farms.length,
+      data: farms
+    });
+
+  } catch (error) {
+    next(new AppError('حدث خطأ أثناء جلب الدائنين'));
+  }
+};
+
+
+/**
+ * Get net farm position summary
+ */
+exports.getNetPosition = async (req, res, next) => {
+  try {
+    const summary = await Farm.getNetPosition();
+
+    res.json({
+      success: true,
+      data: summary
+    });
+
+  } catch (error) {
+    next(new AppError('حدث خطأ أثناء حساب المركز المالي'));
   }
 };
 

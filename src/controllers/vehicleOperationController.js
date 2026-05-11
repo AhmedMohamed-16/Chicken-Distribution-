@@ -87,7 +87,7 @@ class VehicleOperationController {
             },
             attributes: [
               [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
-              [sequelize.fn('SUM', sequelize.col('net_chicken_weight')), 'total_weight'],
+              [sequelize.fn('SUM', sequelize.col('net_weight')), 'total_weight'],
               [sequelize.fn('SUM', sequelize.col('total_amount')), 'total_amount']
             ],
             raw: true
@@ -324,7 +324,7 @@ class VehicleOperationController {
           sum + parseFloat(t.total_amount), 0
         ),
         total_sold_kg: saleTransactions.reduce((sum, t) => 
-          sum + parseFloat(t.net_chicken_weight), 0
+          sum + parseFloat(t.net_weight), 0
         ),
         total_received_from_buyers: saleTransactions.reduce((sum, t) => 
           sum + parseFloat(t.paid_amount), 0

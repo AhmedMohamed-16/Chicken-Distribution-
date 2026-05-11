@@ -22,6 +22,19 @@ const Vehicle = sequelize.define('Vehicle', {
   plate_number: {
     type: DataTypes.STRING(20),
     allowNull: true
+  },
+  payment_source: {
+    type: DataTypes.ENUM('safe', 'partners'),
+    allowNull: false,
+    defaultValue: 'partners'
+  },
+  safe_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'safes',
+      key: 'id'
+    }
   }
 }, {
   tableName: 'vehicles',

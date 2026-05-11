@@ -9,14 +9,14 @@ const TransportLoss = sequelize.define('TransportLoss', {
   },
   daily_operation_id: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: 'daily_operations',
       key: 'id'
     }
   },  vehicle_id: {  // ✅ NEW FIELD
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: 'vehicles',
       key: 'id'
@@ -47,7 +47,7 @@ const TransportLoss = sequelize.define('TransportLoss', {
     allowNull: true
   },vehicle_operation_id: {
   type: DataTypes.INTEGER,
-  allowNull: false,
+  allowNull: true,
   references: {
     model: 'vehicle_operations',
     key: 'id'
@@ -65,6 +65,10 @@ const TransportLoss = sequelize.define('TransportLoss', {
   notes: {  // ✅ OPTIONAL NOTES
     type: DataTypes.TEXT,
     allowNull: true
+  },
+  source: {
+    type: DataTypes.ENUM('TRANSPORT', 'SALE', 'GENERAL'),
+    defaultValue: 'TRANSPORT'
   }
 }, {
   tableName: 'transport_losses',

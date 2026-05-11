@@ -138,7 +138,7 @@ class ProfitReportService {
         where: { daily_operation_id: { [Op.in]: operationIds } },
         attributes: [
           [sequelize.fn('SUM', sequelize.col('SaleTransaction.total_amount')), 'total_revenue'],
-          [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_chicken_weight')), 'total_sold_kg'],
+          [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_weight')), 'total_sold_kg'],
           [sequelize.fn('AVG', sequelize.col('SaleTransaction.price_per_kg')), 'avg_sale_price']
         ],
         raw: true
@@ -155,7 +155,13 @@ class ProfitReportService {
       TransportLoss.findAll({
         where: { daily_operation_id: { [Op.in]: operationIds } },
         attributes: [
-          [sequelize.fn('SUM', sequelize.col('TransportLoss.loss_amount')), 'total_losses']
+          [sequelize.fn('SUM', sequelize.col('TransportLoss.loss_amount')), 'total_losses'],
+          [
+            sequelize.fn('SUM', 
+              sequelize.literal('CASE WHEN "TransportLoss"."farm_id" IS NULL AND "TransportLoss"."source" != \'SALE\' THEN "TransportLoss"."loss_amount" ELSE 0 END')
+            ), 
+            'deductible_losses'
+          ]
         ],
         raw: true
       })
@@ -170,11 +176,14 @@ class ProfitReportService {
     const avg_purchase_price = parseFloat(purchasesData[0]?.avg_purchase_price || 0);
     
     const total_losses = parseFloat(lossesData[0]?.total_losses || 0);
+    const deductible_losses = parseFloat(lossesData[0]?.deductible_losses || 0);
 
-    // حساب صافي الربح الإجمالي من العمليات
-    const total_net_profit = operations.reduce((sum, op) => 
-      sum + parseFloat(op.profit_distribution?.net_profit || 0), 0
-    );
+    // حساب صافي الربح الإجمالي من العمليات (بعد خصم تكاليف المركبات)
+    const total_net_profit = operations.reduce((sum, op) => {
+      const opNet = parseFloat(op.profit_distribution?.net_profit || 0);
+      const opVehCosts = parseFloat(op.profit_distribution?.vehicle_costs || 0);
+      return sum + (opNet - opVehCosts);
+    }, 0);
 
     // حساب إجمالي التكاليف
     const total_costs = operations.reduce((sum, op) => 
@@ -191,8 +200,8 @@ class ProfitReportService {
     const extra_volume = total_sold_kg - baseline_volume;
     const volume_leverage_profit = extra_volume * price_spread;
 
-    // المكون 3: تآكل الخسائر
-    const loss_erosion = -total_losses;
+    // المكون 3: تآكل الخسائر (فقط الفواقد المحملة على المكتب)
+    const loss_erosion = -deductible_losses;
 
     // المكون 4: تأثير كفاءة التكلفة
     const expected_costs_per_kg = 2.0;
@@ -206,7 +215,7 @@ class ProfitReportService {
         where: { daily_operation_id: op.id },
         attributes: [
           [sequelize.fn('SUM', sequelize.col('SaleTransaction.total_amount')), 'revenue'],
-          [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_chicken_weight')), 'sold_kg']
+          [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_weight')), 'sold_kg']
         ],
         raw: true
       });
@@ -235,37 +244,49 @@ class ProfitReportService {
     const margin_mean = dailyMargins.reduce((sum, m) => sum + m, 0) / dailyMargins.length;
     const coefficient_of_variation = margin_mean > 0 ? (margin_volatility / margin_mean) * 100 : 0;
 
+    // حساب إجمالي تكاليف المركبات
+    const total_vehicle_costs = operations.reduce((sum, op) => 
+      sum + parseFloat(op.profit_distribution?.vehicle_costs || 0), 0
+    );
+
     return {
-      description: 'تفصيل مصدر صافي الربح',
+      description: 'تفصيل مصدر صافي الربح النهائي (بعد كل التكاليف)',
       total_net_profit: parseFloat(total_net_profit.toFixed(2)),
       
       components: {
         trading_margin_profit: {
           amount: parseFloat(trading_margin_profit.toFixed(2)),
-          percentage: parseFloat(((trading_margin_profit / total_net_profit) * 100).toFixed(2)),
+          percentage: total_net_profit > 0 ? parseFloat(((trading_margin_profit / total_net_profit) * 100).toFixed(2)) : 0,
           description: 'الربح من فرق السعر (سعر البيع - سعر الشراء) × الحجم',
           calculation: `(${avg_sale_price.toFixed(2)} - ${avg_purchase_price.toFixed(2)}) × ${total_sold_kg.toFixed(2)}`
         },
         
         volume_leverage_profit: {
           amount: parseFloat(volume_leverage_profit.toFixed(2)),
-          percentage: parseFloat(((volume_leverage_profit / total_net_profit) * 100).toFixed(2)),
+          percentage: total_net_profit > 0 ? parseFloat(((volume_leverage_profit / total_net_profit) * 100).toFixed(2)) : 0,
           description: 'ربح إضافي من بيع أحجام أكبر بنفس الهامش',
           calculation: `الحجم الإضافي × متوسط الهامش للكيلو`
         },
         
         loss_erosion: {
           amount: parseFloat(loss_erosion.toFixed(2)),
-          percentage: parseFloat(((loss_erosion / total_net_profit) * 100).toFixed(2)),
-          description: 'الربح المفقود بسبب خسائر النقل',
-          calculation: 'إجمالي مبلغ الخسارة (الدجاج الميت مقيم بسعر الشراء)'
+          percentage: total_net_profit > 0 ? parseFloat(((loss_erosion / total_net_profit) * 100).toFixed(2)) : 0,
+          description: 'الربح المفقود بسبب فواقد النقل (المحملة على المكتب)',
+          calculation: 'إجمالي مبالغ فاقد النقل غير المرتبط بمزرعة'
         },
         
         cost_efficiency_impact: {
           amount: parseFloat(cost_efficiency_impact.toFixed(2)),
-          percentage: parseFloat(((cost_efficiency_impact / total_net_profit) * 100).toFixed(2)),
-          description: 'تأثير الربح من التحكم في التكاليف (مقابل خط الأساس)',
+          percentage: total_net_profit > 0 ? parseFloat(((cost_efficiency_impact / total_net_profit) * 100).toFixed(2)) : 0,
+          description: 'تأثير الربح من التحكم في التكاليف التشغيلية (غير المركبات)',
           calculation: `(${expected_costs.toFixed(2)} - ${total_costs.toFixed(2)})`
+        },
+
+        vehicle_costs_impact: {
+          amount: parseFloat((-total_vehicle_costs).toFixed(2)),
+          percentage: total_net_profit > 0 ? parseFloat(((-total_vehicle_costs / total_net_profit) * 100).toFixed(2)) : 0,
+          description: 'تكاليف تشغيل وصيانة المركبات (الموزعة على الشركاء)',
+          calculation: `إجمالي مصروفات المركبات المسجلة`
         }
       },
       
@@ -277,7 +298,8 @@ class ProfitReportService {
           'volume_leverage_profit',
           'cost_efficiency_impact',
           'trading_margin_profit',
-          'loss_erosion'
+          'loss_erosion',
+          'vehicle_costs_impact'
         ]
       },
       
@@ -297,8 +319,8 @@ class ProfitReportService {
         where: { daily_operation_id: { [Op.in]: operationIds } },
         attributes: [
           [sequelize.fn('SUM', sequelize.col('SaleTransaction.total_amount')), 'total_revenue'],
-          [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_chicken_weight')), 'total_sold_kg'],
-          [sequelize.literal('SUM("SaleTransaction"."total_amount") / SUM("SaleTransaction"."net_chicken_weight")'), 'weighted_avg_sale_price']
+          [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_weight')), 'total_sold_kg'],
+          [sequelize.literal('SUM("SaleTransaction"."total_amount") / SUM("SaleTransaction"."net_weight")'), 'weighted_avg_sale_price']
         ],
         raw: true
       }),
@@ -315,7 +337,13 @@ class ProfitReportService {
         where: { daily_operation_id: { [Op.in]: operationIds } },
         attributes: [
           [sequelize.fn('SUM', sequelize.col('TransportLoss.loss_amount')), 'total_losses'],
-          [sequelize.fn('SUM', sequelize.col('TransportLoss.dead_weight')), 'total_lost_kg']
+          [sequelize.fn('SUM', sequelize.col('TransportLoss.dead_weight')), 'total_lost_kg'],
+          [
+            sequelize.fn('SUM', 
+              sequelize.literal('CASE WHEN "TransportLoss"."farm_id" IS NULL AND "TransportLoss"."source" != \'SALE\' THEN "TransportLoss"."loss_amount" ELSE 0 END')
+            ), 
+            'deductible_losses'
+          ]
         ],
         raw: true
       }),
@@ -333,17 +361,20 @@ class ProfitReportService {
     const sale_price_per_kg = parseFloat(salesData[0]?.weighted_avg_sale_price || 0);
     const purchase_price_per_kg = parseFloat(purchasesData[0]?.weighted_avg_purchase_price || 0);
     const total_losses = parseFloat(lossesData[0]?.total_losses || 0);
+    const deductible_losses = parseFloat(lossesData[0]?.deductible_losses || 0);
     const total_lost_kg = parseFloat(lossesData[0]?.total_lost_kg || 0);
     const total_costs = parseFloat(costsData[0]?.total_costs || 0);
 
-    const total_net_profit = operations.reduce((sum, op) => 
-      sum + parseFloat(op.profit_distribution?.net_profit || 0), 0
-    );
+    const total_net_profit = operations.reduce((sum, op) => {
+      const opNet = parseFloat(op.profit_distribution?.net_profit || 0);
+      const opVehCosts = parseFloat(op.profit_distribution?.vehicle_costs || 0);
+      return sum + (opNet - opVehCosts);
+    }, 0);
 
     const net_profit_per_sold_kg = total_sold_kg > 0 ? total_net_profit / total_sold_kg : 0;
     const net_profit_per_purchased_kg = total_purchased_kg > 0 ? total_net_profit / total_purchased_kg : 0;
     const gross_margin_per_kg = sale_price_per_kg - purchase_price_per_kg;
-    const loss_erosion_per_kg = total_sold_kg > 0 ? total_losses / total_sold_kg : 0;
+    const loss_erosion_per_kg = total_sold_kg > 0 ? deductible_losses / total_sold_kg : 0;
     const cost_burden_per_kg = total_sold_kg > 0 ? total_costs / total_sold_kg : 0;
 
     // مقارنة الفترة السابقة
@@ -372,7 +403,7 @@ class ProfitReportService {
       const prevSales = await SaleTransaction.findAll({
         where: { daily_operation_id: { [Op.in]: prevOpIds } },
         attributes: [
-          [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_chicken_weight')), 'total_sold_kg']
+          [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_weight')), 'total_sold_kg']
         ],
         raw: true
       });
@@ -610,8 +641,8 @@ class ProfitReportService {
         where: { daily_operation_id: { [Op.in]: operationIds } },
         attributes: [
           'buyer_id',
-          [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_chicken_weight')), 'total_kg'],
-          [sequelize.literal('SUM("SaleTransaction"."total_amount") / SUM("SaleTransaction"."net_chicken_weight")'), 'avg_price']
+          [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_weight')), 'total_kg'],
+          [sequelize.literal('SUM("SaleTransaction"."total_amount") / SUM("SaleTransaction"."net_weight")'), 'avg_price']
         ],
         include: [{
           model: Buyer,
@@ -625,7 +656,7 @@ class ProfitReportService {
       SaleTransaction.findAll({
         where: { daily_operation_id: { [Op.in]: operationIds } },
         attributes: [
-          [sequelize.literal('SUM("SaleTransaction"."total_amount") / SUM("SaleTransaction"."net_chicken_weight")'), 'market_avg']
+          [sequelize.literal('SUM("SaleTransaction"."total_amount") / SUM("SaleTransaction"."net_weight")'), 'market_avg']
         ],
         raw: true
       })
@@ -668,16 +699,44 @@ class ProfitReportService {
     }
 
     // 4. تكلفة الفرصة البديلة للمبالغ غير المدفوعة
-    const [totalReceivables] = await Promise.all([
-      Buyer.findAll({
-        attributes: [
-          [sequelize.fn('SUM', sequelize.col('Buyer.total_debt')), 'total_receivables']
-        ],
-        raw: true
-      })
-    ]);
-
-    const total_receivables = parseFloat(totalReceivables[0]?.total_receivables || 0);
+    // const [totalReceivables] = await Promise.all([
+    //   Buyer.findAll({
+    //     attributes: [
+    //       [sequelize.fn('SUM', sequelize.col('Buyer.total_debt')), 'total_receivables']
+    //     ],
+    //     raw: true
+    //   })
+    // ]);
+ 
+const [buyerBalanceSummary] = await Promise.all([
+  Buyer.findAll({
+    attributes: [
+      // Buyers who owe us (positive balance)
+      [
+        sequelize.fn('SUM',
+          sequelize.literal('CASE WHEN current_balance > 0 THEN current_balance ELSE 0 END')
+        ),
+        'total_receivables'
+      ],
+      // Buyers we owe (negative balance — stored as absolute value for readability)
+      [
+        sequelize.fn('SUM',
+          sequelize.literal('CASE WHEN current_balance < 0 THEN ABS(current_balance) ELSE 0 END')
+        ),
+        'total_credits'
+      ],
+      // Net position across all buyers
+      [
+        sequelize.fn('SUM', sequelize.col('current_balance')),  // ← was total_debt
+        'net_position'
+      ]
+    ],
+    raw: true
+  })
+]);
+ 
+// ── Extract values safely ────────────────────────────────────────────────────
+    const total_receivables = parseFloat(buyerBalanceSummary[0]?.total_receivables || 0);
     const opportunity_cost_rate = 7.5;
     const opportunity_leakage = (total_receivables * opportunity_cost_rate) / 100;
 
@@ -922,9 +981,11 @@ class ProfitReportService {
     const avg_loss_value_per_kg = total_lost_kg > 0 ? total_loss_amount / total_lost_kg : 0;
     const profit_impact_per_1pct_loss = (1 / 100) * total_purchased_kg * avg_loss_value_per_kg;
 
-    const net_profit = operations.reduce((sum, op) => 
-      sum + parseFloat(op.profit_distribution?.net_profit || 0), 0
-    );
+    const net_profit = operations.reduce((sum, op) => {
+      const opNet = parseFloat(op.profit_distribution?.net_profit || 0);
+      const opVehCosts = parseFloat(op.profit_distribution?.vehicle_costs || 0);
+      return sum + (opNet - opVehCosts);
+    }, 0);
 
     const lossScenarios = [2.0, 3.0, 5.0].map(rate => {
       const increase_pct = rate - current_loss_rate;
@@ -1048,9 +1109,11 @@ class ProfitReportService {
       })
     ]);
 
-    const total_profit = operations.reduce((sum, op) => 
-      sum + parseFloat(op.profit_distribution?.net_profit || 0), 0
-    );
+    const total_profit = operations.reduce((sum, op) => {
+      const opNet = parseFloat(op.profit_distribution?.net_profit || 0);
+      const opVehCosts = parseFloat(op.profit_distribution?.vehicle_costs || 0);
+      return sum + (opNet - opVehCosts);
+    }, 0);
 
     const avg_profit_per_farm_tx = farmTxCount > 0 ? total_profit / farmTxCount : 0;
     const avg_profit_per_sale_tx = saleTxCount > 0 ? total_profit / saleTxCount : 0;

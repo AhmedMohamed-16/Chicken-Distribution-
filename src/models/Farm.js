@@ -38,6 +38,17 @@ const Farm = sequelize.define('Farm', {
     type: DataTypes.DECIMAL(12, 2),
     defaultValue: 0,
     allowNull: false,
+    validate: {
+      isFinancialBalance(value) {
+        const num = parseFloat(value);
+        if (isNaN(num) || !isFinite(num)) {
+          throw new Error('رصيد المزرعة غير صالح');
+        }
+        if (Math.abs(num) > 999999999.99) {
+          throw new Error('رصيد المزرعة يتجاوز الحد المسموح');
+        }
+      }
+    },
     comment: 'Positive = Farm owes us (RECEIVABLE), Negative = We owe farm (PAYABLE), Zero = Settled'
   }
 }, {

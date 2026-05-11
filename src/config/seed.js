@@ -3,7 +3,7 @@
 // Adds sample data to database
 // ========================================
 
-const { sequelize, testConnection } = require('./config/database');
+const { sequelize, testConnection } = require('./database');
 const bcrypt = require('bcryptjs');
 
 // Import models
@@ -16,8 +16,9 @@ const {
   Buyer,
   ChickenType,
   CostCategory,
-  Permission,UserPermission
-} = require('./models');
+  Permission,UserPermission,
+  Safe
+} = require('../models');
 
 const colors = {
   reset: '\x1b[0m',
@@ -532,6 +533,15 @@ const now = new Date();
     is_active: true,
     created_at: now,
     updated_at: now
+  },
+  {
+    key: 'VIEW_STATEMENT_REPORT',
+    name: 'عرض كشف الحسابات',
+    description: 'عرض كشف الحسابات للنظام و الحركات الماليه',
+    category: 'التقارير',
+    is_active: true,
+    created_at: now,
+    updated_at: now
   }
 ];
 
@@ -577,6 +587,103 @@ if (!admin) {
 
   log('   ✅ APPLICATION_ADMIN assigned to admin', 'green');
 }
+ 
+    // ============================================
+    // 18. SAFES (CASH BOXES)
+    // ============================================
+    log('\n🔐 Creating safes...', 'blue');
+     
+    
+    const safes = [
+      { name: 'صندوق النقد الرئيسي', description: 'صندوق النقد الرئيسي للمزرعة', initial_balance: 50000,type:'CASH'  },
+      { name: 'صندوق الأجور', description: 'صندوق مخصص للأجور والرواتب', initial_balance: 20000,type:'CASH' },
+      { name: 'صندوق التكاليف', description: 'صندوق مخصص لتكاليف التشغيل', initial_balance: 30000,type:'CASH' }
+    ];
+
+    for (const safe of safes) {
+      const [created, isNew] = await Safe.findOrCreate({
+        where: { name: safe.name },
+        defaults: {
+          ...safe,
+          current_balance: safe.initial_balance,
+          created_by: admin.id
+        }
+      });
+      
+      log(`   ${isNew ? '✅ Created' : '⏭️  Exists'}: ${safe.name}`, isNew ? 'green' : 'yellow');
+    }
+
+    // // ============================================
+    // // 19. SAFE TRANSFERS
+    // // ============================================
+    // log('\n💰 Creating safe transfers...', 'blue');
+    
+    // const SafeTransfer = require('../models').SafeTransfer;
+    // const allSafes = await Safe.findAll();
+    
+    // if (allSafes.length >= 2) {
+    //   for (let i = 0; i < 10; i++) {
+    //     const transferDate = new Date(2024, 0, Math.floor(Math.random() * 21) + 15);
+    //     const sourceSafe = allSafes[0];
+    //     const targetSafe = allSafes[1];
+    //     const transferAmount = Math.floor(Math.random() * 5000) + 1000;
+        
+    //     const [created, isNew] = await SafeTransfer.findOrCreate({
+    //       where: {
+    //         source_safe_id: sourceSafe.id,
+    //         target_safe_id: targetSafe.id,
+    //         transfer_date: transferDate,
+    //         sequence: i + 1
+    //       },
+    //       defaults: {
+    //         source_safe_id: sourceSafe.id,
+    //         target_safe_id: targetSafe.id,
+    //         transfer_date: transferDate,
+    //         amount: transferAmount,
+    //         description: `تحويل من ${sourceSafe.name} إلى ${targetSafe.name}`,
+    //         sequence: i + 1,
+    //         created_by: admin.id
+    //       }
+    //     });
+        
+    //     if (isNew) {
+    //       log(`   ✅ Transfer #${i + 1}: ${transferAmount} EGP`, 'green');
+    //     }
+    //   }
+    // }
+
+    // ============================================
+    // 20. EMPLOYEES (IF MODEL EXISTS)
+    // ============================================
+    try {
+      log('\n👨‍💼 Creating employees...', 'blue');
+      
+      const Employee = require('../models').Employee;
+      
+      const employees = [
+        { full_name: 'محمد علي', phone: '01012345678', position: 'سائق', salary: 2000, is_active: true },
+        { full_name: 'أحمد سالم', phone: '01012345679', position: 'عامل تحميل', salary: 1500, is_active: true },
+        { full_name: 'علي محمود', phone: '01012345680', position: 'عامل تحميل', salary: 1500, is_active: true },
+        { full_name: 'سعيد خالد', phone: '01012345681', position: 'مشرف عمليات', salary: 2500, is_active: true },
+        { full_name: 'فارس عمر', phone: '01012345682', position: 'مراقب جودة', salary: 1800, is_active: true }
+      ];
+
+      for (const employee of employees) {
+        const [created, isNew] = await Employee.findOrCreate({
+          where: { full_name: employee.full_name },
+          defaults: {
+            ...employee,
+            created_by: admin.id
+          }
+        });
+        
+        if (isNew) {
+          log(`   ✅ Created: ${employee.full_name} - ${employee.position}`, 'green');
+        }
+      }
+    } catch (err) {
+      log('   ⏭️  Employee model not found or error', 'yellow');
+    }
 
 
 
@@ -594,6 +701,18 @@ if (!admin) {
     log(`   - Buyers: ${await Buyer.count()}`, 'yellow');
     log(`   - Chicken Types: ${await ChickenType.count()}`, 'yellow');
     log(`   - Cost Categories: ${await CostCategory.count()}`, 'yellow');
+    log(`   - Permissions: ${await Permission.count()}`, 'yellow');
+    
+    try {
+      log(`   - Safe Transfers: ${await SafeTransfer.count()}`, 'yellow');
+      
+ 
+        const Employee = require('../models').Employee;
+        log(`   - Employees: ${await Employee.count()}`, 'yellow');
+     
+    } catch (err) {
+      log('   ⚠️  Some transaction models not available', 'yellow');
+    }
     
     log('\n🚀 Next steps:', 'blue');
     log('   1. Start your backend: npm run dev', 'yellow');

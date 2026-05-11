@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const { DailyOperation ,VehicleOperation, Vehicle} = require('../models');
 
 class VehicleValidationHelper {
@@ -34,7 +35,7 @@ class VehicleValidationHelper {
       where: { vehicle_id: vehicleId },
       include: [{
         model: DailyOperation,
-        as: 'daily_operation',
+        as: 'operation',
         where: whereClause
       }]
     });
@@ -50,7 +51,7 @@ class VehicleValidationHelper {
       where: { daily_operation_id: operationId },
       include: [{
         model: Vehicle,
-        as: 'vehicles'
+        as: 'vehicle'
       }]
     });
     

@@ -59,7 +59,7 @@ class TransactionAggregator {
     });
     
     transactions.sale_transactions.forEach(t => {
-      summary.total_sold_kg += parseFloat(t.net_chicken_weight);
+      summary.total_sold_kg += parseFloat(t.net_weight);
       summary.total_revenue += parseFloat(t.total_amount);
     });
     

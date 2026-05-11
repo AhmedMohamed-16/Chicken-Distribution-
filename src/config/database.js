@@ -4,19 +4,25 @@
 // ========================================
 
 const { Sequelize } = require('sequelize');
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') });
+
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is not set');
+}
 
 // ✅ TWO WAYS TO CONNECT:
 
 // METHOD 1: Using full connection string (RECOMMENDED for Neon)
+const isNeon = process.env.DATABASE_URL && process.env.DATABASE_URL.includes('neon.tech');
+
 const sequelize = new Sequelize(process.env.DATABASE_URL, {
   dialect: 'postgres',
-  dialectOptions: {
+  dialectOptions: isNeon ? {
     ssl: {
       require: true,
       rejectUnauthorized: false // Required for Neon
     }
-  },
+  } : undefined,
   logging: process.env.NODE_ENV === 'development' ? console.log : false,
   pool: {
     max: 5,        // Maximum connections
@@ -99,12 +105,12 @@ const closeConnection = async () => {
 };
 
 /**
- * Get database info
+ * Get database information
  */
 const getDatabaseInfo = async () => {
   try {
     const result = await sequelize.query(
-      'SELECT version() as pg_version, current_database() as db_name, current_user as user',
+      'SELECT current_database() as database_name, current_user as user_name, version() as version',
       { type: Sequelize.QueryTypes.SELECT }
     );
     return result[0];

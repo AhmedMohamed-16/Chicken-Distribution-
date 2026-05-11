@@ -1,0 +1,730 @@
+// ========================================
+// SEED DATA SCRIPT
+// Adds sample data to database
+// ========================================
+
+const { sequelize, testConnection } = require('./database');
+const bcrypt = require('bcryptjs');
+
+// Import models
+const {
+  User,
+  Partner,
+  Vehicle,
+  VehiclePartner,
+  Farm,
+  Buyer,
+  ChickenType,
+  CostCategory,
+  Permission,UserPermission
+} = require('../models');
+
+const colors = {
+  reset: '\x1b[0m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[36m'
+};
+
+function log(message, color = 'reset') {
+  console.log(`${colors[color]}${message}${colors.reset}`);
+}
+
+async function seed() {
+  try {
+    log('\n🌱 Starting database seeding...', 'blue');
+
+    // Test connection
+    const connected = await testConnection();
+    if (!connected) {
+      log('❌ Cannot connect to database', 'red');
+      process.exit(1);
+    }
+
+    // ============================================
+    // 1. USERS
+    // ============================================
+    log('\n👤 Creating users...', 'blue');
+    
+    const adminExists = await User.findOne({ where: { username: 'admin' } });
+    if (!adminExists) {
+      await User.create({
+        username: 'admin',
+        password_hash: 'admin123', // Will be hashed by model hook
+        full_name: 'مدير النظام',
+        email: 'admin@chicken.local',
+        is_active: true
+      });
+      log('   ✅ Admin created (username: admin, password: admin123)', 'green');
+    } else {
+      log('   ⏭️  Admin already exists', 'yellow');
+    }
+
+    const userExists = await User.findOne({ where: { username: 'user' } });
+    if (!userExists) {
+      await User.create({
+        username: 'user',
+        password_hash: 'user123',
+        full_name: 'مستخدم عادي',
+        email: 'user@chicken.local',
+        is_active: true
+      });
+      log('   ✅ User created (username: user, password: user123)', 'green');
+    } else {
+      log('   ⏭️  User already exists', 'yellow');
+    }
+
+    // ============================================
+    // 2. CHICKEN TYPES
+    // ============================================
+    log('\n🐔 Creating chicken types...', 'blue');
+    
+    const chickenTypes = [
+      { name: 'دجاج أبيض', description: 'White broiler chicken' },
+      { name: 'دجاج أحمر', description: 'Red broiler chicken' },
+      { name: 'دجاج بلدي', description: 'Local/farm chicken' },
+      { name: 'دجاج ساسو', description: 'Sasso chicken' }
+    ];
+
+    for (const type of chickenTypes) {
+      const [created, isNew] = await ChickenType.findOrCreate({
+        where: { name: type.name },
+        defaults: type
+      });
+      log(`   ${isNew ? '✅ Created' : '⏭️  Exists'}: ${type.name}`, isNew ? 'green' : 'yellow');
+    }
+
+    // ============================================
+    // 3. COST CATEGORIES
+    // ============================================
+    log('\n💰 Creating cost categories...', 'blue');
+    
+    const costCategories = [
+      { name: 'وقود', description: 'Fuel costs', is_vehicle_cost: true },
+      { name: 'صيانة العربية', description: 'Vehicle maintenance', is_vehicle_cost: true },
+      { name: 'رسوم طريق', description: 'Highway tolls', is_vehicle_cost: true },
+      { name: 'غسيل العربية', description: 'Vehicle washing', is_vehicle_cost: true },
+      { name: 'عمالة', description: 'Labor costs', is_vehicle_cost: false },
+      { name: 'ثلج', description: 'Ice for cooling', is_vehicle_cost: false },
+      { name: 'أقفاص', description: 'Cage rental/purchase', is_vehicle_cost: false },
+      { name: 'مصاريف إدارية', description: 'Administrative expenses', is_vehicle_cost: false },
+      { name: 'كراتين', description: 'Boxes/packaging', is_vehicle_cost: false }
+    ];
+
+    for (const category of costCategories) {
+      const [created, isNew] = await CostCategory.findOrCreate({
+        where: { name: category.name },
+        defaults: category
+      });
+      log(`   ${isNew ? '✅ Created' : '⏭️  Exists'}: ${category.name} (Vehicle: ${category.is_vehicle_cost})`, isNew ? 'green' : 'yellow');
+    }
+
+    // ============================================
+    // 4. PARTNERS
+    // ============================================
+    log('\n👥 Creating partners...', 'blue');
+    
+    const partners = [
+      {
+        name: 'محمد أحمد',
+        phone: '01234567890',
+        address: 'القاهرة، مصر',
+        investment_amount: 100000,
+        investment_percentage: 40,
+        is_vehicle_partner: true
+      },
+      {
+        name: 'أحمد محمود',
+        phone: '01234567891',
+        address: 'الجيزة، مصر',
+        investment_amount: 87500,
+        investment_percentage: 35,
+        is_vehicle_partner: true
+      },
+      {
+        name: 'خالد حسن',
+        phone: '01234567892',
+        address: 'الإسكندرية، مصر',
+        investment_amount: 62500,
+        investment_percentage: 25,
+        is_vehicle_partner: false
+      }
+    ];
+
+    for (const partner of partners) {
+      const [created, isNew] = await Partner.findOrCreate({
+        where: { name: partner.name },
+        defaults: partner
+      });
+      log(`   ${isNew ? '✅ Created' : '⏭️  Exists'}: ${partner.name} (${partner.investment_percentage}% - Vehicle: ${partner.is_vehicle_partner})`, isNew ? 'green' : 'yellow');
+    }
+
+    // ============================================
+    // 5. VEHICLE
+    // ============================================
+    log('\n🚛 Creating vehicle...', 'blue');
+    
+    const [vehicle, vehicleCreated] = await Vehicle.findOrCreate({
+      where: { plate_number: 'ABC 123' },
+      defaults: {
+        name: 'Toyota Truck',
+        purchase_price: 150000,
+        empty_weight: 3500,
+        plate_number: 'ABC 123'
+      }
+    });
+
+    if (vehicleCreated) {
+      log(`   ✅ Vehicle created: ${vehicle.name}`, 'green');
+      
+      // Assign to vehicle partners
+      const vehiclePartners = await Partner.findAll({ where: { is_vehicle_partner: true } });
+      const sharePercentage = 100 / vehiclePartners.length;
+
+      for (const partner of vehiclePartners) {
+        await VehiclePartner.findOrCreate({
+          where: { vehicle_id: vehicle.id, partner_id: partner.id },
+          defaults: {
+            vehicle_id: vehicle.id,
+            partner_id: partner.id,
+            share_percentage: sharePercentage.toFixed(2)
+          }
+        });
+      }
+      log(`   ✅ Assigned to ${vehiclePartners.length} partners`, 'green');
+    } else {
+      log('   ⏭️  Vehicle already exists', 'yellow');
+    }
+
+    // ============================================
+    // 6. FARMS
+    // ============================================
+    log('\n🏡 Creating farms...', 'blue');
+    
+    const farms = [
+      {
+        name: 'مزرعة النور',
+        owner_name: 'عبد الله محمد',
+        location: 'الفيوم، مصر',
+        phone: '01111111111',
+        current_balance: 0
+      },
+      {
+        name: 'مزرعة الأمل',
+        owner_name: 'حسن علي',
+        location: 'بني سويف، مصر',
+        phone: '01222222222',
+        current_balance: 0
+      },
+      {
+        name: 'مزرعة الخير',
+        owner_name: 'سعيد أحمد',
+        location: 'المنيا، مصر',
+        phone: '01333333333',
+        current_balance: 0
+      }
+    ];
+
+    for (const farm of farms) {
+      const [created, isNew] = await Farm.findOrCreate({
+        where: { name: farm.name },
+        defaults: farm
+      });
+      log(`   ${isNew ? '✅ Created' : '⏭️  Exists'}: ${farm.name} - ${farm.owner_name}`, isNew ? 'green' : 'yellow');
+    }
+
+    // ============================================
+    // 7. BUYERS
+    // ============================================
+    log('\n🛒 Creating buyers...', 'blue');
+    
+    const buyers = [
+      {
+        name: 'محل الطيور',
+        phone: '01444444444',
+        address: 'شارع الجمهورية، القاهرة',
+        total_debt: 0
+      },
+      {
+        name: 'سوبر ماركت النور',
+        phone: '01555555555',
+        address: 'شارع الهرم، الجيزة',
+        total_debt: 0
+      },
+      {
+        name: 'مطعم الفراخ الذهبية',
+        phone: '01666666666',
+        address: 'ميدان التحرير، القاهرة',
+        total_debt: 0
+      }
+    ];
+
+    for (const buyer of buyers) {
+      const [created, isNew] = await Buyer.findOrCreate({
+        where: { name: buyer.name },
+        defaults: buyer
+      });
+      log(`   ${isNew ? '✅ Created' : '⏭️  Exists'}: ${buyer.name}`, isNew ? 'green' : 'yellow');
+    }
+// ============================================
+// 1.5 PERMISSIONS
+// ============================================
+log('\n🔐 Creating permissions...', 'blue');
+
+const now = new Date();
+
+ const permissions = [
+  // ========================================
+  // النظام
+  // ========================================
+  {
+    key: 'APPLICATION_ADMIN',
+    name: 'أدمن التطبيق',
+    description: 'صلاحية كاملة للتحكم في جميع أجزاء النظام بدون قيود',
+    category: 'النظام',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+
+  // ========================================
+  // المستخدمين
+  // ========================================
+  {
+    key: 'MANAGE_USERS',
+    name: 'إدارة المستخدمين',
+    description: 'إضافة وتعديل وحذف المستخدمين',
+    category: 'المستخدمين',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'VIEW_USERS',
+    name: 'عرض المستخدمين',
+    description: 'عرض قائمة المستخدمين وبياناتهم',
+    category: 'المستخدمين',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+
+  // ========================================
+  // الشركاء
+  // ========================================
+  {
+    key: 'MANAGE_PARTNERS',
+    name: 'إدارة الشركاء',
+    description: 'إضافة وتعديل وحذف الشركاء',
+    category: 'الشركاء',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'VIEW_PARTNERS',
+    name: 'عرض الشركاء',
+    description: 'عرض بيانات الشركاء',
+    category: 'الشركاء',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+
+  // ========================================
+  // المزارع
+  // ========================================
+  {
+    key: 'MANAGE_FARMS',
+    name: 'إدارة المزارع',
+    description: 'إضافة وتعديل وحذف المزارع',
+    category: 'المزارع',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'VIEW_FARMS',
+    name: 'عرض المزارع',
+    description: 'عرض بيانات وحركات المزارع',
+    category: 'المزارع',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+
+  // ========================================
+  // العملاء (محلات الفراخ)
+  // ========================================
+  {
+    key: 'MANAGE_BUYERS',
+    name: 'إدارة العملاء',
+    description: 'إضافة وتعديل وحذف العملاء',
+    category: 'محلات الفراخ',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'VIEW_BUYERS',
+    name: 'عرض العملاء',
+    description: 'عرض بيانات العملاء',
+    category: 'محلات الفراخ',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+
+  // ========================================
+  // المركبات
+  // ========================================
+  {
+    key: 'MANAGE_VEHICLES',
+    name: 'إدارة السيارات',
+    description: 'إضافة وتعديل وحذف السيارات',
+    category: 'المركبات',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'VIEW_VEHICLES',
+    name: 'عرض السيارات',
+    description: 'عرض بيانات السيارات',
+    category: 'المركبات',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+
+  // ========================================
+  // إغلاق اليوم
+  // ========================================
+  {
+    key: 'CLOSE_OPERATION',
+    name: 'إغلاق العملية اليومية',
+    description: 'إغلاق اليوم لكل عمليات التشغيل',
+    category: 'اغلاق اليوم',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+
+  // ========================================
+  // العمليات
+  // ========================================
+  {
+    key: 'RECORD_FARM_LOADING',
+    name: 'تسجيل تحميل من مزرعة',
+    description: 'تسجيل كميات التحميل من المزارع',
+    category: 'العمليات',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'RECORD_SALE',
+    name: 'تسجيل عملية بيع',
+    description: 'تسجيل عمليات البيع',
+    category: 'العمليات',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'RECORD_TRANSPORT_LOSS',
+    name: 'تسجيل فاقد النقل',
+    description: 'تسجيل فاقد النقل أثناء التشغيل',
+    category: 'العمليات',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'RECORD_COST',
+    name: 'تسجيل التكاليف',
+    description: 'تسجيل التكاليف اليومية',
+    category: 'العمليات',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+
+  // ========================================
+  // الدواجن
+  // ========================================
+  {
+    key: 'MANAGE_CHICKEN_TYPES',
+    name: 'إدارة أنواع الدواجن',
+    description: 'إضافة وتعديل أنواع الدواجن',
+    category: 'الدواجن',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'VIEW_CHICKEN_TYPES',
+    name: 'عرض انواع الدواجن',
+    description: 'عرض انواع الدواجن',
+    category: 'الدواجن',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+
+  // ========================================
+  // التكاليف
+  // ========================================
+  {
+    key: 'MANAGE_COST_CATEGORIES',
+    name: 'إدارة بنود التكاليف',
+    description: 'إضافة وتعديل بنود التكاليف',
+    category: 'التكاليف',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'VIEW_COST_CATEGORIES',
+    name: 'عرض انواع التكاليف',
+    description: 'عرض انواع التكاليف',
+    category: 'التكاليف',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+
+  // ========================================
+  // التقارير
+  // ========================================
+  {
+    key: 'VIEW_DAILY_REPORT',
+    name: 'عرض التقرير اليومي',
+    description: 'عرض تقرير التشغيل اليومي',
+    category: 'التقارير',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'VIEW_PERIOD_REPORT',
+    name: 'عرض تقرير فترة',
+    description: 'عرض تقارير حسب فترة زمنية',
+    category: 'التقارير',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'VIEW_PROFIT_REPORT',
+    name: 'عرض تقارير الأرباح',
+    description: 'عرض تقارير الأرباح والتوزيع',
+    category: 'التقارير',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  },
+  {
+    key: 'VIEW_DEBT_REPORT',
+    name: 'عرض تقارير المديونيات',
+    description: 'عرض تقارير ديون المزارع والعملاء',
+    category: 'التقارير',
+    is_active: true,
+    created_at: now,
+    updated_at: now
+  }
+];
+
+for (const permission of permissions) {
+  const [created, isNew] = await Permission.findOrCreate({
+    where: { key: permission.key },
+    defaults: permission
+  });
+
+  log(
+    `   ${isNew ? '✅ Created' : '⏭️  Exists'}: ${permission.key}`,
+    isNew ? 'green' : 'yellow'
+  );
+}
+
+
+// ============================================
+// ASSIGN APPLICATION_ADMIN TO ADMIN ONLY
+// ============================================
+log('\n🛡️ Assigning APPLICATION_ADMIN to admin...', 'blue');
+
+const admin = await User.findOne({ where: { username: 'admin' } });
+const adminPermission = await Permission.findOne({
+  where: { key: 'APPLICATION_ADMIN' }
+});
+
+if (!admin) {
+  log('   ❌ Admin user not found', 'red');
+} else if (!adminPermission) {
+  log('   ❌ APPLICATION_ADMIN permission not found', 'red');
+} else {
+  await UserPermission.findOrCreate({
+    where: {
+      user_id: admin.id,
+      permission_id: adminPermission.id
+    },
+    defaults: {
+      user_id: admin.id,
+      permission_id: adminPermission.id,
+      granted_by: admin.id // self granted (system admin)
+    }
+  });
+
+  log('   ✅ APPLICATION_ADMIN assigned to admin', 'green');
+}
+ 
+    // ============================================
+    // 18. SAFES (CASH BOXES)
+    // ============================================
+    log('\n🔐 Creating safes...', 'blue');
+    
+    const Safe = require('../models').Safe;
+    
+    const safes = [
+      { name: 'صندوق النقد الرئيسي', description: 'صندوق النقد الرئيسي للمزرعة', initial_balance: 50000 },
+      { name: 'صندوق الأجور', description: 'صندوق مخصص للأجور والرواتب', initial_balance: 20000 },
+      { name: 'صندوق التكاليف', description: 'صندوق مخصص لتكاليف التشغيل', initial_balance: 30000 }
+    ];
+
+    for (const safe of safes) {
+      const [created, isNew] = await Safe.findOrCreate({
+        where: { name: safe.name },
+        defaults: {
+          ...safe,
+          current_balance: safe.initial_balance,
+          created_by: admin.id
+        }
+      });
+      
+      log(`   ${isNew ? '✅ Created' : '⏭️  Exists'}: ${safe.name}`, isNew ? 'green' : 'yellow');
+    }
+
+    // ============================================
+    // 19. SAFE TRANSFERS
+    // ============================================
+    log('\n💰 Creating safe transfers...', 'blue');
+    
+    const SafeTransfer = require('../models').SafeTransfer;
+    const allSafes = await Safe.findAll();
+    
+    if (allSafes.length >= 2) {
+      for (let i = 0; i < 10; i++) {
+        const transferDate = new Date(2024, 0, Math.floor(Math.random() * 21) + 15);
+        const sourceSafe = allSafes[0];
+        const targetSafe = allSafes[1];
+        const transferAmount = Math.floor(Math.random() * 5000) + 1000;
+        
+        const [created, isNew] = await SafeTransfer.findOrCreate({
+          where: {
+            source_safe_id: sourceSafe.id,
+            target_safe_id: targetSafe.id,
+            transfer_date: transferDate,
+            sequence: i + 1
+          },
+          defaults: {
+            source_safe_id: sourceSafe.id,
+            target_safe_id: targetSafe.id,
+            transfer_date: transferDate,
+            amount: transferAmount,
+            description: `تحويل من ${sourceSafe.name} إلى ${targetSafe.name}`,
+            sequence: i + 1,
+            created_by: admin.id
+          }
+        });
+        
+        if (isNew) {
+          log(`   ✅ Transfer #${i + 1}: ${transferAmount} EGP`, 'green');
+        }
+      }
+    }
+
+    // ============================================
+    // 20. EMPLOYEES (IF MODEL EXISTS)
+    // ============================================
+    try {
+      log('\n👨‍💼 Creating employees...', 'blue');
+      
+      const Employee = require('../models').Employee;
+      
+      const employees = [
+        { full_name: 'محمد علي', phone: '01012345678', position: 'سائق', salary: 2000, is_active: true },
+        { full_name: 'أحمد سالم', phone: '01012345679', position: 'عامل تحميل', salary: 1500, is_active: true },
+        { full_name: 'علي محمود', phone: '01012345680', position: 'عامل تحميل', salary: 1500, is_active: true },
+        { full_name: 'سعيد خالد', phone: '01012345681', position: 'مشرف عمليات', salary: 2500, is_active: true },
+        { full_name: 'فارس عمر', phone: '01012345682', position: 'مراقب جودة', salary: 1800, is_active: true }
+      ];
+
+      for (const employee of employees) {
+        const [created, isNew] = await Employee.findOrCreate({
+          where: { full_name: employee.full_name },
+          defaults: {
+            ...employee,
+            created_by: admin.id
+          }
+        });
+        
+        if (isNew) {
+          log(`   ✅ Created: ${employee.full_name} - ${employee.position}`, 'green');
+        }
+      }
+    } catch (err) {
+      log('   ⏭️  Employee model not found or error', 'yellow');
+    }
+
+
+
+    // ============================================
+    // SUMMARY
+    // ============================================
+    log('\n' + '='.repeat(50), 'blue');
+    log('🎉 Database seeding completed!', 'green');
+    log('='.repeat(50), 'blue');
+    log('\n📊 Summary:', 'blue');
+    log(`   - Users: ${await User.count()}`, 'yellow');
+    log(`   - Partners: ${await Partner.count()}`, 'yellow');
+    log(`   - Vehicles: ${await Vehicle.count()}`, 'yellow');
+    log(`   - Farms: ${await Farm.count()}`, 'yellow');
+    log(`   - Buyers: ${await Buyer.count()}`, 'yellow');
+    log(`   - Chicken Types: ${await ChickenType.count()}`, 'yellow');
+    log(`   - Cost Categories: ${await CostCategory.count()}`, 'yellow');
+    log(`   - Permissions: ${await Permission.count()}`, 'yellow');
+    
+    try {
+ 
+      const Safe = require('../models').Safe;
+      const SafeTransfer = require('../models').SafeTransfer;
+      log(`   - Safes: ${await Safe.count()}`, 'yellow');
+      log(`   - Safe Transfers: ${await SafeTransfer.count()}`, 'yellow');
+      
+      try {
+        const Employee = require('../models').Employee;
+        log(`   - Employees: ${await Employee.count()}`, 'yellow');
+      } catch (err) {
+        // Employee model might not exist
+      }
+    } catch (err) {
+      log('   ⚠️  Some transaction models not available', 'yellow');
+    }
+    
+    log('\n🚀 Next steps:', 'blue');
+    log('   1. Start your backend: npm run dev', 'yellow');
+    log('   2. Login with: admin / admin123\n', 'yellow');
+    
+    await sequelize.close();
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Seeding failed:', error);
+    console.error('\nError details:', error.message);
+    if (error.stack) console.error(error.stack);
+    await sequelize.close();
+    process.exit(1);
+  }
+}
+
+// Run seeding
+seed();

@@ -4,51 +4,52 @@
  */
 
 const cron = require('node-cron');
-const { createBackup, cleanOldBackups } = require('../services/Backupservice');
+const { createBackup, cleanOldBackups ,hasMonthlyBackup} = require('../services/Backupservice');
 
 /**
  * Schedule monthly backup
  * Runs on the 1st day of every month at 00:00 (midnight)
  */
-const scheduleMonthlyBackup = () => {
-  // Cron pattern: '0 0 1 * *'
-  // Minute Hour Day Month DayOfWeek
-  // 0      0    1   *     *
-  // Runs at 00:00 on day 1 of every month
-  
-  const monthlyBackupJob = cron.schedule('* * 1 * *', async () => {
-    console.log('\n========================================');
-    console.log('Scheduled Monthly Backup Starting...');
-    console.log('Time:', new Date().toLocaleString('en-GB', { timeZone: 'Africa/Cairo' }));
-    console.log('========================================\n');
+const monthlyBackupJob = cron.schedule('0 0 1 * *', async () => {
+  console.log('\n========================================');
+  console.log('Scheduled Monthly Backup Starting...');
+  console.log('Time:', new Date().toLocaleString('en-GB', {
+    timeZone: 'Africa/Cairo'
+  }));
+  console.log('========================================\n');
 
-    try {
-      // Create backup with system user (user_id = 1)
-      const result = await createBackup(1);
-      
-      console.log('✓ Scheduled backup completed successfully');
-      console.log(`  Backup ID: ${result.backupId}`);
-      console.log(`  Filename: ${result.filename}`);
-      console.log(`  Size: ${(result.fileSize / 1024 / 1024).toFixed(2)} MB`);
+  try {
 
-      // Clean old backups (retention policy)
-      const retentionDays = parseInt(process.env.BACKUP_RETENTION_DAYS) || 90;
-      await cleanOldBackups(retentionDays);
+    // ✅ Prevent duplicate monthly backups
+    const alreadyExists = await hasMonthlyBackup();
 
-    } catch (error) {
-      console.error('✗ Scheduled backup failed:', error.message);
-      // In production, you might want to send an alert/notification here
+    if (alreadyExists) {
+      console.log('⚠ Monthly backup already exists. Skipping...');
+      return;
     }
-  }, {
-    scheduled: true,
-    timezone: "Africa/Cairo" // Change to your timezone if needed
-  });
 
-  console.log('✓ Monthly backup scheduler initialized');
-  console.log('  Schedule: 1st of every month at 00:00 UTC'); 
+    // Create backup
+    const result = await createBackup(1);
 
-  return monthlyBackupJob;
-};
+    console.log('✓ Scheduled backup completed successfully');
+    console.log(`  Backup ID: ${result.backupId}`);
+    console.log(`  Filename: ${result.filename}`);
+    console.log(`  Size: ${(result.fileSize / 1024 / 1024).toFixed(2)} MB`);
+
+    // Cleanup
+    const retentionDays =
+      parseInt(process.env.BACKUP_RETENTION_DAYS) || 90;
+
+    await cleanOldBackups(retentionDays);
+
+  } catch (error) {
+    console.error('✗ Scheduled backup failed:', error.message);
+  }
+
+}, {
+  scheduled: true,
+  timezone: 'Africa/Cairo'
+});
 
 /**
  * Schedule daily cleanup of old backups

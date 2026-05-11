@@ -20,7 +20,6 @@ const UserBackup = sequelize.define('user_backups', {
   backup_name: {
     type: DataTypes.STRING(255),
     allowNull: false,
-    unique: true,
     comment: 'Unique filename of the backup ZIP file'
   },
   backup_date: {
@@ -36,8 +35,7 @@ const UserBackup = sequelize.define('user_backups', {
   },
   status: {
     type: DataTypes.ENUM('PENDING', 'COMPLETED', 'FAILED'),
-    defaultValue: 'PENDING',
-    comment: 'Status of the backup operation'
+    defaultValue: 'PENDING'
   },
   error_message: {
     type: DataTypes.TEXT,
@@ -55,6 +53,10 @@ const UserBackup = sequelize.define('user_backups', {
     },
     {
       fields: ['status']
+    },
+    {
+      unique: true,
+      fields: ['backup_name']
     }
   ]
 });

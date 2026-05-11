@@ -211,6 +211,7 @@ const farmPaymentController = require('../controllers/farmPaymentController');
 const VehicleOperationController = require('../controllers/vehicleOperationController');
 const ValidationMiddleware = require('../middleware/validation');
 const ProfitDistributionController = require('../controllers/ProfitDistributionController');
+const costCategoryController = require('../controllers/costCategoryController'); // ✅ Imported
 const upload = require('../middleware/upload'); 
 const {
   createBackupController,
@@ -218,11 +219,14 @@ const {
   restoreBackupController,
   listBackupsController
 } = require('../controllers/Backupcontroller');
+const employeeController = require('../controllers/employeeController');
+const financialRoutes = require('./financialTransactionRoutes');
 
 // ========================================
 // AUTH ROUTES (Public & User Self-Service)
 // ========================================
 router.post('/auth/login', authController.login);
+router.post('/auth/logout', authenticate, authController.logout);
 router.get('/auth/profile', authenticate, authController.getProfile);
 router.put('/auth/profile', authenticate, authController.updateProfile);
 router.get('/auth/permissions', authenticate, authController.getMyPermissions);
@@ -252,20 +256,30 @@ router.delete('/permissions/:id', authenticate, requirePermissions(['MANAGE_USER
 router.get('/permissions/:id/statistics', authenticate, requirePermissions(['VIEW_USERS','MANAGE_USERS'],{ requireAll :false }), permissionController.getPermissionStatistics);
 
 // ========================================
-// PARTNER ROUTES
-// ========================================
-router.get('/partners', authenticate, requirePermissions(['VIEW_PARTNERS','MANAGE_PARTNERS'],{ requireAll :false }), partnerController.getAllPartners);
-router.get('/partners/:id', authenticate, requirePermissions(['VIEW_PARTNERS','MANAGE_PARTNERS'],{ requireAll :false }), partnerController.getPartnerById);
-router.post('/partners', authenticate, requirePermissions(['MANAGE_PARTNERS']), partnerController.createPartner);
-router.put('/partners/:id', authenticate, requirePermissions(['MANAGE_PARTNERS']), partnerController.updatePartner);
-router.delete('/partners/:id', authenticate, requirePermissions(['MANAGE_PARTNERS']), partnerController.deletePartner);
+  // PARTNER ROUTES - REORDERED for /balances priority
+  // ========================================
+  // Partner profit routes FIRST - MOVE TO TOP OF PARTNER SECTION
+  const partnerProfitRoutes1 = require('./partnerProfitRoutes');
+  router.use('/partners', partnerProfitRoutes1);
+  
+  // Partner CRUD after profit routes
+  router.get('/partners', authenticate, requirePermissions(['VIEW_PARTNERS','MANAGE_PARTNERS'],{ requireAll :false }), partnerController.getAllPartners);
+  router.get('/partners/:id', authenticate, requirePermissions(['VIEW_PARTNERS','MANAGE_PARTNERS'],{ requireAll :false }), partnerController.getPartnerById);
+  router.post('/partners', authenticate, requirePermissions(['MANAGE_PARTNERS']), partnerController.createPartner);
+  router.put('/partners/:id', authenticate, requirePermissions(['MANAGE_PARTNERS']), partnerController.updatePartner);
+  router.delete('/partners/:id', authenticate, requirePermissions(['MANAGE_PARTNERS']), partnerController.deletePartner);
 
-// ========================================
-// FARM ROUTES
-// ========================================
+  // ========================================
+  // FARM ROUTES
+  // ========================================
 router.get('/farms', authenticate, requirePermissions(['VIEW_FARMS','MANAGE_FARMS','RECORD_FARM_LOADING','RECORD_SALE','RECORD_TRANSPORT_LOSS','RECORD_COST'],{ requireAll :false }), farmController.getAllFarms);
 router.get('/paginate-farms', authenticate, requirePermissions(['VIEW_FARMS','MANAGE_FARMS'],{ requireAll :false }), farmController.getPaginationAllFarms);
+router.get('/farms/payables', authenticate, requirePermissions(['VIEW_FARMS','MANAGE_FARMS'],{ requireAll :false }), farmController.getPayables);
+router.get('/farms/receivables', authenticate, requirePermissions(['VIEW_FARMS','MANAGE_FARMS'],{ requireAll :false }), farmController.getReceivables);
+router.get('/farms/net-position', authenticate, requirePermissions(['VIEW_FARMS','MANAGE_FARMS'],{ requireAll :false }), farmController.getNetPosition);
+router.get('/farms/active-balances', authenticate, requirePermissions(['VIEW_FARMS','MANAGE_FARMS'],{ requireAll :false }), farmController.getActiveBalances);
 router.get('/farms/:id', authenticate, requirePermissions(['VIEW_FARMS','MANAGE_FARMS'],{ requireAll :false }), farmController.getFarmById);
+
 router.post('/farms', authenticate, requirePermissions(['MANAGE_FARMS']), farmController.createFarm);
 router.put('/farms/:id', authenticate, requirePermissions(['MANAGE_FARMS']), farmController.updateFarm);
 router.delete('/farms/:id', authenticate, requirePermissions(['MANAGE_FARMS']), farmController.deleteFarm);
@@ -310,6 +324,28 @@ router.put('/cost-categories/:id', authenticate, requirePermissions(['MANAGE_COS
 router.delete('/cost-categories/:id', authenticate, requirePermissions(['MANAGE_COST_CATEGORIES']), operationController.deleteCostCategory);
 
 // ========================================
+// COST CATEGORY BALANCES ROUTES
+// ========================================
+router.get('/cost-balances',
+  authenticate,
+  requirePermissions(['VIEW_COST_CATEGORIES', 'RECORD_COST'], { requireAll: false }),
+  costCategoryController.getCategoryBalances
+);
+
+router.get('/cost-balances/summary',
+  authenticate,
+  requirePermissions(['VIEW_COST_CATEGORIES', 'RECORD_COST'], { requireAll: false }),
+  costCategoryController.getCostSummary
+);
+
+router.get('/cost-balances/statement/:id',
+  authenticate,
+  requirePermissions(['VIEW_COST_CATEGORIES', 'RECORD_COST'], { requireAll: false }),
+  costCategoryController.getCategoryStatement
+);
+
+
+// ========================================
 // VEHICLE OPERATIONS IN DAILY OPERATIONS
 // ========================================
 router.patch('/daily-operations/vehicle-operations/:vehicleOperationId/complete',
@@ -326,7 +362,7 @@ router.get('/daily-operations/:id/vehicles',
 
 router.get('/daily-operations/:id/vehicles/:vehicleId/transactions',
   authenticate,
-  requirePermissions([,'RECORD_FARM_LOADING','RECORD_SALE','RECORD_TRANSPORT_LOSS','RECORD_COST','CLOSE_OPERATION'],{ requireAll :false }),
+  requirePermissions(['RECORD_FARM_LOADING','RECORD_SALE','RECORD_TRANSPORT_LOSS','RECORD_COST','CLOSE_OPERATION'],{ requireAll: false }),
   ValidationMiddleware.transactionWithVehicle,
   VehicleOperationController.getVehicleTransactions
 );
@@ -355,15 +391,15 @@ router.post('/daily-operations/start',
   operationController.startDailyOperation
 );
 
-router.get('/daily-operations/:id',
+router.get('/daily-operations/unpaid-costs',
   authenticate,
-  requirePermissions(['RECORD_FARM_LOADING','RECORD_SALE','RECORD_TRANSPORT_LOSS','RECORD_COST','CLOSE_OPERATION'],{ requireAll :false }),
-  operationController.getOperation
+  requirePermissions(['VIEW_COSTS', 'RECORD_COST'], { requireAll: false }),
+  operationController.getUnpaidCosts
 );
 
 router.get('/daily-operations/by-date/:date',
   authenticate,
-  requirePermissions([,'RECORD_FARM_LOADING','RECORD_SALE','RECORD_TRANSPORT_LOSS','RECORD_COST','CLOSE_OPERATION'],{ requireAll :false }),
+  requirePermissions(['RECORD_FARM_LOADING','RECORD_SALE','RECORD_TRANSPORT_LOSS','RECORD_COST','CLOSE_OPERATION'],{ requireAll: false }),
   operationController.getOperationByDate
 );
 
@@ -387,6 +423,24 @@ router.post('/daily-operations/:id/cost',
   operationController.recordDailyCost
 );
 
+router.get('/daily-costs/unpaid-costs',
+  authenticate,
+  requirePermissions(['VIEW_COSTS', 'RECORD_COST'], { requireAll: false }),
+  operationController.getUnpaidCosts
+);
+
+router.post('/daily-costs/:id/payment',
+  authenticate,
+  requirePermissions(['RECORD_COST']),
+  operationController.recordCostPayment
+);
+
+router.get('/daily-operations/:id/unpaid-costs',
+  authenticate,
+  requirePermissions(['VIEW_COSTS', 'RECORD_COST'], { requireAll: false }),
+  operationController.getUnpaidCostsForOperation
+);
+
 router.post('/daily-operations/:id/sale',
   authenticate,
   requirePermissions(['RECORD_SALE']),
@@ -399,6 +453,12 @@ router.post('/daily-operations/:id/close',
   requirePermissions(['CLOSE_OPERATION']),
   operationController.closeDailyOperation
 );
+router.get('/daily-operations/:id',
+  authenticate,
+  requirePermissions(['RECORD_FARM_LOADING','RECORD_SALE','RECORD_TRANSPORT_LOSS','RECORD_COST','CLOSE_OPERATION'],{ requireAll :false }),
+  operationController.getOperation
+);
+
 
 // ========================================
 // REPORT ROUTES
@@ -558,5 +618,79 @@ router.get('/backup/download/:filename', authenticate, requirePermissions(['APPL
  */
 router.post('/backup/restore', authenticate, upload.single('file'), restoreBackupController);
 
+
+// ========================================
+// EMPLOYEE ROUTES
+// ========================================
+router.get('/employees',
+  authenticate,
+  requirePermissions(['VIEW_EMPLOYEES', 'MANAGE_EMPLOYEES'], { requireAll: false }),
+  employeeController.getAllEmployees
+);
+
+router.get('/employees/:id',
+  authenticate,
+  requirePermissions(['VIEW_EMPLOYEES', 'MANAGE_EMPLOYEES'], { requireAll: false }),
+  employeeController.getEmployeeById
+);
+
+router.post('/employees',
+  authenticate,
+  requirePermissions(['MANAGE_EMPLOYEES']),
+  employeeController.createEmployee
+);
+
+router.put('/employees/:id',
+  authenticate,
+  requirePermissions(['MANAGE_EMPLOYEES']),
+  employeeController.updateEmployee
+);
+
+router.delete('/employees/:id',
+  authenticate,
+  requirePermissions(['MANAGE_EMPLOYEES']),
+  employeeController.deleteEmployee
+);
+
+// ========================================
+// ADVANCES & CUSTODIES ROUTES
+// ========================================
+const advanceRoutes = require('./advanceRoutes');
+const custodyRoutes = require('./custodyRoutes');
+const salaryRoutes = require('./salaryRoutes');
+router.use('/advances', advanceRoutes);
+router.use('/custodies', custodyRoutes);
+router.use('/salaries', salaryRoutes);
+
+// ========================================
+// SAFES & TRANSFERS ROUTES
+// ========================================
+const safeRoutes = require('./safeRoutes');
+const safeTransferRoutes = require('./safeTransferRoutes');
+router.use('/safes', safeRoutes);
+router.use('/safe-transfers', safeTransferRoutes);
+
+// ========================================
+// LOSS ROUTES
+// ========================================
+const lossRoutes = require('./lossRoutes');
+router.use('/losses', lossRoutes);
+
+// ========================================
+// PARTNER PROFIT & WITHDRAWAL ROUTES
+// ========================================
+const partnerProfitRoutes = require('./partnerProfitRoutes');
+router.use('/partners', partnerProfitRoutes);
+// ========================================
+// FINANCIAL TRANSACTION ROUTES
+// ========================================
+const financialTransactionRoutes = require('./financialTransactionRoutes');
+router.use('/financial-transactions', financialTransactionRoutes);
+
+// ========================================
+// UNIFIED STATEMENT ROUTES
+// ========================================
+const statementRoutes = require('./statementRoutes');
+router.use('/statements', authenticate, requirePermissions(['VIEW_STATEMENT_REPORT', 'APPLICATION_ADMIN'], { requireAll: false }), statementRoutes);
 
 module.exports = router;

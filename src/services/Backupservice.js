@@ -325,10 +325,49 @@ const cleanOldBackups = async (retentionDays = 90) => {
     console.error('Error cleaning old backups:', error.message);
   }
 };
+/**
+ * Check if monthly backup already exists
+ * @returns {boolean}
+ */
+const hasMonthlyBackup = async () => {
+  const now = new Date();
 
+  const startOfMonth = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    1,
+    0,
+    0,
+    0
+  );
+
+  const endOfMonth = new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    0,
+    23,
+    59,
+    59
+  );
+
+  const existingBackup = await UserBackup.findOne({
+    where: {
+      status: 'COMPLETED',
+      backup_date: {
+        [require('sequelize').Op.between]: [
+          startOfMonth,
+          endOfMonth
+        ]
+      }
+    }
+  });
+
+  return !!existingBackup;
+};
 module.exports = {
   createBackup,
   listBackups,
   cleanOldBackups,
-  BACKUP_DIR
+  BACKUP_DIR,
+  hasMonthlyBackup
 };

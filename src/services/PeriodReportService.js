@@ -176,15 +176,18 @@ class PeriodReportService {
         total_costs += parseFloat(op.profit_distribution.total_costs || 0);
         vehicle_costs += parseFloat(op.profit_distribution.vehicle_costs || 0);
       }
-      console.log("op.profit_distribution.total_losses",op.profit_distribution.lossesWithFarm);
       
     });
 
-  const net_profit = total_revenue - total_purchases - total_losses_without_farm - total_costs;
+    const net_profit = operations.reduce((sum, op) => {
+      const opNet = parseFloat(op.profit_distribution?.net_profit || 0);
+      const opVehCosts = parseFloat(op.profit_distribution?.vehicle_costs || 0);
+      return sum + (opNet - opVehCosts);
+    }, 0);
   
-  const profit_margin_percentage = total_revenue > 0 
-    ? ((net_profit / total_revenue) * 100).toFixed(2)
-    : 0;
+    const profit_margin_percentage = total_revenue > 0 
+      ? ((net_profit / total_revenue) * 100).toFixed(2)
+      : 0;
     
   const avg_daily_profit = operations.length > 0 
     ? (net_profit / operations.length).toFixed(2)
@@ -224,7 +227,7 @@ class PeriodReportService {
       where: { daily_operation_id: { [Op.in]: operationIds } },
       attributes: [
         [sequelize.fn('SUM', sequelize.col('SaleTransaction.paid_amount')), 'cash_received'],
-        [sequelize.fn('SUM', sequelize.col('SaleTransaction.old_debt_paid')), 'old_debt_collected'],
+        [sequelize.fn('SUM', sequelize.col('SaleTransaction.debt_applied_amount')), 'old_debt_collected'],
         [sequelize.fn('SUM', sequelize.col('SaleTransaction.remaining_amount')), 'accounts_receivable']
       ],
       raw: true
@@ -241,11 +244,13 @@ class PeriodReportService {
       raw: true
     });
 
-    // الحصول على التكاليف (بافتراض أن جميع التكاليف مدفوعة نقداً)
+    // الحصول على التكاليف - النقد المدفوع فعلياً (ليس المبلغ الكامل)
     const costs = await DailyCost.findAll({
       where: { daily_operation_id: { [Op.in]: operationIds } },
       attributes: [
-        [sequelize.fn('SUM', sequelize.col('DailyCost.amount')), 'total_costs']
+        [sequelize.fn('SUM', sequelize.col('DailyCost.paid_amount')), 'total_costs_paid'],
+        [sequelize.fn('SUM', sequelize.col('DailyCost.amount')), 'total_costs_recorded'],
+        [sequelize.fn('SUM', sequelize.literal('"DailyCost"."amount" - "DailyCost"."paid_amount"')), 'costs_remaining_unpaid']
       ],
       raw: true
     });
@@ -254,7 +259,8 @@ class PeriodReportService {
 const losses = await TransportLoss.findAll({
   where: { 
     daily_operation_id: { [Op.in]: operationIds },
-    farm_id: { [Op.eq]: null }  // استبعاد خسائر المزارع
+    farm_id: null,
+    source: { [Op.ne]: 'SALE' }
   },
   attributes: [
     [sequelize.fn('SUM', sequelize.col('TransportLoss.loss_amount')), 'total_losses_without_farms']
@@ -274,7 +280,9 @@ const total_losses_without_farms = parseFloat(losses[0]?.total_losses_without_fa
     const credit_used = parseFloat(purchasesCash[0]?.credit_used || 0);
     const accounts_payable = parseFloat(purchasesCash[0]?.accounts_payable || 0);
     
-    const total_costs_paid = parseFloat(costs[0]?.total_costs || 0);
+    const total_costs_paid = parseFloat(costs[0]?.total_costs_paid || 0);
+    const total_costs_recorded = parseFloat(costs[0]?.total_costs_recorded || 0);
+    const costs_remaining_unpaid = parseFloat(costs[0]?.costs_remaining_unpaid || 0);
     const total_losses = parseFloat(losses[0]?.total_losses || 0);
 
     // إجمالي النقد الداخل
@@ -303,7 +311,15 @@ const total_losses_without_farms = parseFloat(losses[0]?.total_losses_without_fa
         cash_out: {
           purchases_cash_paid: parseFloat(cash_paid.toFixed(2)),
           costs_paid: parseFloat(total_costs_paid.toFixed(2)),
-          total_cash_out: parseFloat(total_cash_out.toFixed(2))
+          total_cash_out: parseFloat(total_cash_out.toFixed(2)),
+          costs_breakdown: {
+            total_recorded: parseFloat(total_costs_recorded.toFixed(2)),
+            actually_paid: parseFloat(total_costs_paid.toFixed(2)),
+            remaining_unpaid: parseFloat(costs_remaining_unpaid.toFixed(2)),
+            payment_rate_percentage: total_costs_recorded > 0 
+              ? parseFloat(((total_costs_paid / total_costs_recorded) * 100).toFixed(2))
+              : 0
+          }
         },
         net_cash_flow: parseFloat(net_cash_flow.toFixed(2)),
         cash_flow_status: net_cash_flow > 0 ? 'إيجابي' : net_cash_flow < 0 ? 'سلبي' : 'محايد'
@@ -348,7 +364,7 @@ const total_losses_without_farms = parseFloat(losses[0]?.total_losses_without_fa
     const saleTransactions = await SaleTransaction.findAll({
       where: { daily_operation_id: { [Op.in]: operationIds } },
       attributes: [
-        [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_chicken_weight')), 'total_sold_kg'],
+        [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_weight')), 'total_sold_kg'],
         [sequelize.fn('SUM', sequelize.col('SaleTransaction.total_amount')), 'total_revenue'],
         [sequelize.fn('COUNT', sequelize.col('SaleTransaction.id')), 'sale_count']
       ],
@@ -366,7 +382,8 @@ const total_losses_without_farms = parseFloat(losses[0]?.total_losses_without_fa
 const losses = await TransportLoss.findAll({
   where: { 
     daily_operation_id: { [Op.in]: operationIds },
-    farm_id: { [Op.eq]:null }
+    farm_id: null,
+    source: { [Op.ne]: 'SALE' }
   },
   attributes: [
     [sequelize.fn('SUM', sequelize.col('TransportLoss.loss_amount')), 'total_losses_without_farms']
@@ -477,7 +494,7 @@ const total_losses = parseFloat(losses[0]?.total_losses_without_farms || 0);
       attributes: [
         'chicken_type_id',
         [sequelize.fn('SUM', sequelize.col('SaleTransaction.total_amount')), 'total_revenue'],
-        [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_chicken_weight')), 'total_volume_kg'],
+        [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_weight')), 'total_volume_kg'],
         [sequelize.fn('COUNT', sequelize.col('SaleTransaction.id')), 'transaction_count']
       ],
       include: [
@@ -687,7 +704,8 @@ const total_losses = parseFloat(losses[0]?.total_losses_without_farms || 0);
             where: {
               daily_operation_id: operation.id,
               vehicle_id: vehicle.id,
-              farm_id: { [Op.eq]: null}
+              farm_id: null,
+              source: { [Op.ne]: 'SALE' }
             }
           })
         ]);
@@ -706,7 +724,7 @@ const total_losses = parseFloat(losses[0]?.total_losses_without_farms || 0);
 
     // حساب المقاييس والترتيب
     const vehicles = Object.values(vehicleStats).map(v => {
-      const net_profit = v.total_revenue - v.total_purchases - v.total_costs - v.total_losses;
+      const net_profit = v.total_revenue - v.total_purchases - v.total_costs;
       const profit_margin_pct = v.total_revenue > 0 
         ? ((net_profit / v.total_revenue) * 100).toFixed(2)
         : 0;
@@ -714,10 +732,10 @@ const total_losses = parseFloat(losses[0]?.total_losses_without_farms || 0);
         ? (net_profit / v.days_operated).toFixed(2)
         : 0;
 
-      let performance_rating = 'يحتاج تحسين';
-      if (parseFloat(profit_margin_pct) >= 15) performance_rating = 'ممتاز';
-      else if (parseFloat(profit_margin_pct) >= 12) performance_rating = 'جيد';
-      else if (parseFloat(profit_margin_pct) >= 8) performance_rating = 'متوسط';
+      let performance_rating = 'NEEDS_IMPROVEMENT';
+      if (parseFloat(profit_margin_pct) >= 15) performance_rating = 'EXCELLENT';
+      else if (parseFloat(profit_margin_pct) >= 12) performance_rating = 'GOOD';
+      else if (parseFloat(profit_margin_pct) >= 8) performance_rating = 'AVERAGE';
 
       return {
         ...v,
@@ -780,15 +798,25 @@ const total_losses = parseFloat(losses[0]?.total_losses_without_farms || 0);
     const net_farm_position = total_receivables - total_payables;
 
     // ديون المشترين
-    const buyers = await Buyer.findAll({
-      where: { total_debt: { [Op.gt]: 0 } },
-      attributes: ['id', 'name', 'total_debt'],
-      order: [['total_debt', 'DESC']]
+    const buyerReceivables = await Buyer.findAll({
+      where: { current_balance: { [Op.gt]: 0 } },
+      attributes: ['id', 'name', 'current_balance'],
+      order: [['current_balance', 'DESC']]
     });
 
-    const total_buyer_debt = buyers.reduce((sum, b) => 
-      sum + parseFloat(b.total_debt), 0
+    const buyerPayables = await Buyer.findAll({
+      where: { current_balance: { [Op.lt]: 0 } },
+      attributes: ['id', 'name', 'current_balance'],
+      order: [['current_balance', 'ASC']]
+    });
+
+    const total_buyer_debt = buyerReceivables.reduce((sum, b) => 
+      sum + parseFloat(b.current_balance), 0
     );
+
+    const total_buyer_credit = Math.abs(buyerPayables.reduce((sum, b) => 
+      sum + parseFloat(b.current_balance), 0
+    ));
 
     return {
       farms: {
@@ -806,17 +834,20 @@ const total_losses = parseFloat(losses[0]?.total_losses_without_farms || 0);
       },
       buyers: {
         total_outstanding: parseFloat(total_buyer_debt.toFixed(2)),
-        buyers_with_debt: buyers.length,
-        largest_debtor: buyers.length > 0 ? {
-          buyer_id: buyers[0].id,
-          buyer_name: buyers[0].name,
-          amount_owed: parseFloat(parseFloat(buyers[0].total_debt).toFixed(2))
+        total_credits: parseFloat(total_buyer_credit.toFixed(2)),
+        net_position: parseFloat((total_buyer_debt - total_buyer_credit).toFixed(2)),
+        buyers_with_debt: buyerReceivables.length,
+        buyers_with_credit: buyerPayables.length,
+        largest_debtor: buyerReceivables.length > 0 ? {
+          buyer_id: buyerReceivables[0].id,
+          buyer_name: buyerReceivables[0].name,
+          amount_owed: parseFloat(parseFloat(buyerReceivables[0].current_balance).toFixed(2))
         } : null
       },
       summary: {
         total_receivables: parseFloat((total_receivables + total_buyer_debt).toFixed(2)),
-        total_payables: parseFloat(total_payables.toFixed(2)),
-        net_working_capital: parseFloat((total_receivables + total_buyer_debt - total_payables).toFixed(2))
+        total_payables: parseFloat((total_payables + total_buyer_credit).toFixed(2)),
+        net_working_capital: parseFloat((total_receivables + total_buyer_debt - total_payables - total_buyer_credit).toFixed(2))
       }
     };
   }
@@ -840,7 +871,7 @@ const total_losses = parseFloat(losses[0]?.total_losses_without_farms || 0);
         SaleTransaction.findAll({
           where: { daily_operation_id: { [Op.in]: operationIds } },
           attributes: [
-            [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_chicken_weight')), 'total_sold_kg']
+            [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_weight')), 'total_sold_kg']
           ],
           raw: true
         }),
@@ -867,7 +898,7 @@ const total_losses = parseFloat(losses[0]?.total_losses_without_farms || 0);
           where: { daily_operation_id: { [Op.in]: operationIds } },
           attributes: [
             [sequelize.fn('SUM', sequelize.col('SaleTransaction.total_amount')), 'total_sale_amount'],
-            [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_chicken_weight')), 'total_sale_weight']
+            [sequelize.fn('SUM', sequelize.col('SaleTransaction.net_weight')), 'total_sale_weight']
           ],
           raw: true
         })
@@ -1073,21 +1104,58 @@ const total_losses = parseFloat(losses[0]?.total_losses_without_farms || 0);
     });
 
     // التحقق من ديون المشترين المتأخرة
-    const buyers = await Buyer.findAll({
-      where: { total_debt: { [Op.gt]: 20000 } },
-      attributes: ['id', 'name', 'total_debt']
-    });
+    // const buyers = await Buyer.findAll({
+    //   where: { total_debt: { [Op.gt]: 20000 } },
+    //   attributes: ['id', 'name', 'total_debt']
+    // });
 
-    buyers.forEach(buyer => {
-      alerts.push({
-        type: 'دين_مشتري_عالي',
-        severity: 'عالية',
-        message: `المشتري '${buyer.name}' مدين بمبلغ ${parseFloat(buyer.total_debt).toFixed(2)} جنيه`,
-        action_required: 'المتابعة على الدفع أو تقييد الائتمان الإضافي',
-        buyer_id: buyer.id,
-        amount: parseFloat(parseFloat(buyer.total_debt).toFixed(2))
-      });
-    });
+    // buyers.forEach(buyer => {
+    //   alerts.push({
+    //     type: 'دين_مشتري_عالي',
+    //     severity: 'عالية',
+    //     message: `المشتري '${buyer.name}' مدين بمبلغ ${parseFloat(buyer.total_debt).toFixed(2)} جنيه`,
+    //     action_required: 'المتابعة على الدفع أو تقييد الائتمان الإضافي',
+    //     buyer_id: buyer.id,
+    //     amount: parseFloat(parseFloat(buyer.total_debt).toFixed(2))
+    //   });
+    // });
+const highReceivableBuyers = await Buyer.findAll({
+  where: { current_balance: { [Op.gt]: 20000 } },   // ← was total_debt
+  attributes: ['id', 'name', 'current_balance']       // ← was total_debt
+});
+ 
+highReceivableBuyers.forEach(buyer => {
+  const balance = round2(parseFloat(buyer.current_balance) || 0);
+  alerts.push({
+    type:            'دين_مشتري_عالي',
+    severity:        'عالية',
+    message:         `المشتري '${buyer.name}' مدين بمبلغ ${balance.toFixed(2)} جنيه`,
+    action_required: 'المتابعة على الدفع أو تقييد الائتمان الإضافي',
+    buyer_id:        buyer.id,
+    amount:          balance,
+    balance_type:    'RECEIVABLE'
+  });
+});
+ 
+// ── Buyers we owe a large credit to (payables) ──────────────────────────────
+const highCreditBuyers = await Buyer.findAll({
+  where: { current_balance: { [Op.lt]: -20000 } },  // large negative balance
+  attributes: ['id', 'name', 'current_balance']
+});
+ 
+highCreditBuyers.forEach(buyer => {
+  const credit = round2(Math.abs(parseFloat(buyer.current_balance) || 0));
+  alerts.push({
+    type:            'رصيد_دائن_عالي',
+    severity:        'متوسطة',
+    message:         `للمشتري '${buyer.name}' رصيد دائن بمبلغ ${credit.toFixed(2)} جنيه`,
+    action_required: 'مراجعة الرصيد الدائن وصرفه للمشتري أو تسويته',
+    buyer_id:        buyer.id,
+    amount:          credit,
+    balance_type:    'CREDIT'
+  });
+});
+ 
 
     return alerts;
   }

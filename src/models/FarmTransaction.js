@@ -77,7 +77,12 @@ const FarmTransaction = sequelize.define('FarmTransaction', {
   remaining_amount: {
     type: DataTypes.DECIMAL(12, 2),
     allowNull: false
-  }
+  },
+  discount_amount: {
+  type: DataTypes.DECIMAL(12, 2),
+  defaultValue: 0,
+  allowNull: false
+}
   ,vehicle_operation_id: {
   type: DataTypes.INTEGER,
   allowNull: false,
@@ -90,6 +95,34 @@ const FarmTransaction = sequelize.define('FarmTransaction', {
     defaultValue: 0,
     allowNull: false
   },
+  // received_by_person_id: {
+  //   type: DataTypes.INTEGER,
+  //   allowNull: true,
+  //   references: {
+  //     model: 'users',
+  //     key: 'id'
+  //   }
+  // },
+  paid_by_person_type: {
+    type: DataTypes.ENUM( 'EMPLOYEE', 'PARTNER'),
+    allowNull: true
+  },
+  paid_by_person_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  payment_method: {
+    type: DataTypes.ENUM('CASH', 'INSTAPAY', 'BANK', 'VODAFONE_CASH'),
+    defaultValue: 'CASH'
+  },
+  payment_source_type: {
+    type: DataTypes.ENUM('SAFE', 'CUSTODY'),
+    defaultValue: 'SAFE'
+  },
+  payment_source_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  }
 
 }, {
   tableName: 'farm_transactions',
@@ -100,6 +133,15 @@ const FarmTransaction = sequelize.define('FarmTransaction', {
   indexes: [
     { fields: ['daily_operation_id'] },
     { fields: ['vehicle_id', 'daily_operation_id'] }  // ✅ NEW INDEX
-  ]
+  ],
+  getterMethods: {
+    balanceImpact() {
+      // Purchase increases our debt to the farm (positive impact on Farm's balance)
+      // Net impact = total_amount - paid_amount
+      const totalAmt = parseFloat(this.getDataValue('total_amount')) || 0;
+      const paidAmt = parseFloat(this.getDataValue('paid_amount')) || 0;
+      return totalAmt - paidAmt;
+    }
+  }
 });
 module.exports = FarmTransaction;

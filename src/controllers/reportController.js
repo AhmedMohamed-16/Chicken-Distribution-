@@ -22,1153 +22,6 @@ const ProfitService = require('../services/ProfitService');
 const PeriodReportService = require('../services/PeriodReportService');
 const ProfitReportService = require('../services/ProfitReportService');
 
-// exports.getDailyReport = async (req, res) => {
-//   try {
-//     const { date } = req.params;
-
-//     const operations = await DailyOperation.findAll({
-//   where: { operation_date: date },
-//   include: [
-//     {
-//       model: Vehicle,
-//       as: 'vehicles',
-//       through: { attributes: ['status'] }
-//     },
-//     {
-//       model: FarmTransaction,as:"farm_transactions",
-//       include: [{model:Farm,as:"farm"}, {model:ChickenType,as:"chicken_type"}]
-//     },
-//     {
-//       model: SaleTransaction,as:"sale_transactions",
-//       include: [
-//   { model: Buyer, as: 'buyer' },
-//   { model: ChickenType, as: 'chicken_type' }
-// ]
-
-//     },
-//     {
-//       model: TransportLoss,as:"losses",
-//       include: [{model:ChickenType,as:"chicken_type"}]
-//     },
-//     {
-//       model: DailyCost,as:"costs",
-//       include: [{model:CostCategory,as: 'category'}]
-//     },
-//     {
-//       model: ProfitDistribution,
-//       as: 'profit_distribution',   
-//       include: [
-//         {
-//           model: PartnerProfit,
-//           as: 'partner_profits',    
-//           include: [
-//             { model: Partner, as: 'partner' }  
-//           ]
-//         }
-//       ]
-//     }
-//   ]
-// });
-
-
-//     if (operations.length === 0) {
-//       return res.status(404).json({
-//         success: false,
-//         message: 'لم يتم العثور على أي عمليات لهذا التاريخ'
-//       });
-//     }
-
-// //     // Calculate summary
-// //     const totalPurchases = operation.FarmTransactions.reduce((sum, t) => 
-// //       sum + parseFloat(t.total_amount), 0
-// //     );
-// //     const totalSales = operation.SaleTransactions.reduce((sum, t) => 
-// //       sum + parseFloat(t.total_amount), 0
-// //     );
-// //     const totalLosses = operation.TransportLosses.reduce((sum, l) => 
-// //       sum + parseFloat(l.loss_amount), 0
-// //     );
-// //     const totalCosts = operation.DailyCosts.reduce((sum, c) => 
-// //       sum + parseFloat(c.amount), 0
-// //     );
-
-// //     res.json({
-// //       success: true,
-// //       data: {
-// //         operation_date: date,
-// //         status: operation.status,
-// //         summary: {
-// //           total_purchases: totalPurchases,
-// //           total_sales: totalSales,
-// //           total_losses: totalLosses,
-// //           total_costs: totalCosts,
-// //           net_profit: operation.profit_distribution?.net_profit || 0
-// //         },
-// //         farm_transactions: operation.FarmTransactions,
-// //         sales: operation.SaleTransactions,
-// //         losses: operation.TransportLosses,
-// //         costs: operation.DailyCosts,
-// //         profit_distribution: operation.profit_distribution
-// //       }
-// //     });
-// //   } catch (error) {
-// //     res.status(500).json({
-// //       success: false,
-// //       message: 'Error generating daily report',
-// //       error: error.message
-// //     });
-// //   }
-// // };
-//  // ✅ NEW: Calculate per-vehicle stats for each operation
-//     const reportData = await Promise.all(
-//       operations.map(async (operation) => {
-//         const profitData = await ProfitService.calculateDailyProfit(operation.id);
-        
-//         return {
-//           operation_id: operation.id,
-//           vehicle_count: operation.vehicles.length,
-//           vehicles: operation.vehicles.map(v => ({
-//             id: v.id,
-//             name: v.name,
-//             plate_number: v.plate_number,
-//             purchase_price: v.purchase_price,
-//             created_at: v.created_at
-//           })),
-//           summary: {
-//             total_purchases: profitData.totalPurchases,
-//             total_sales: profitData.totalRevenue,
-//             total_costs: profitData.totalCosts,
-//             total_losses: profitData.totalLosses,
-//             net_profit: profitData.netProfit
-//           },
-//           vehicle_breakdown: profitData.vehicleBreakdown,  // ✅ NEW
-//           status: operation.status,
-//           farm_transactions: operation.FarmTransactions,
-//         sales: operation.SaleTransactions,
-//         losses: operation.TransportLosses,
-//         costs: operation.DailyCosts,
-//         profit_distribution: operation.profit_distribution
-//         };
-//       })
-//     );
-    
-//     res.json({
-//       success: true,
-//       data: {
-//         operation_date: date,
-//         operations: reportData
-//       }
-//     });
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       message: error.message
-//     });
-//   }
-// };
-
-// exports.getPeriodReport = async (req, res) => {
-//   try {
-//     const { from, to } = req.query;
-
-//     if (!from || !to) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'From and to dates are required'
-//       });
-//     }
-
-//     const operations = await DailyOperation.findAll({
-//       where: {
-//         operation_date: {
-//           [Op.between]: [from, to]
-//         }
-//       },
-//       include: [
-//         {
-//           model: FarmTransaction,
-//           include: [{ model: Farm }, { model: ChickenType }]
-//         },
-//         {
-//           model: SaleTransaction,
-//           include: [{ model: Buyer }, { model: ChickenType }]
-//         },
-//         {
-//           model: TransportLoss,
-//           include: [{ model: ChickenType }]
-//         },
-//         {
-//           model: DailyCost,
-//           include: [{ model: CostCategory }]
-//         },
-//         {
-//           model: ProfitDistribution
-//         }
-//       ],
-//       order: [['operation_date', 'DESC']]
-//     });
-
-//     // Aggregate totals
-//     let totals = {
-//       total_purchases: 0,
-//       total_sales: 0,
-//       total_losses: 0,
-//       total_costs: 0,
-//       total_profit: 0,
-//       days_operated: operations.length
-//     };
-
-//     operations.forEach(op => {
-//       op.FarmTransactions.forEach(t => {
-//         totals.total_purchases += parseFloat(t.total_amount);
-//       });
-//       op.SaleTransactions.forEach(t => {
-//         totals.total_sales += parseFloat(t.total_amount);
-//       });
-//       op.TransportLosses.forEach(l => {
-//         totals.total_losses += parseFloat(l.loss_amount);
-//       });
-//       op.DailyCosts.forEach(c => {
-//         totals.total_costs += parseFloat(c.amount);
-//       });
-//       if (op.ProfitDistribution) {
-//         totals.total_profit += parseFloat(op.ProfitDistribution.net_profit);
-//       }
-//     });
-
-//     res.json({
-//       success: true,
-//       data: {
-//         period: { from, to },
-//         totals,
-//         operations
-//       }
-//     });
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       message: 'Error generating period report'
-//     });
-//   }
-// };
-// exports.getPeriodReport = async (req, res) => {
-//   try {
-//     const { from, to } = req.query;
-//     console.log(from,to)
-//     if (!from || !to) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'From and to dates are required'
-//       });
-//     }
-
-//     // التحقق من صيغة التاريخ
-//     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-//     if (!dateRegex.test(from) || !dateRegex.test(to)) {
-//       return res.status(400).json({
-//         success: false,
-//         message: 'Invalid date format. Use YYYY-MM-DD'
-//       });
-//     }
-
-//     const operations = await DailyOperation.findAll({
-//       where: {
-//         operation_date: {
-//           [Op.between]: [
-//             new Date(from + 'T00:00:00'),
-//             new Date(to + 'T23:59:59')
-//           ]
-//         }
-//       } ,
-//       include: [
-//         { model: FarmTransaction, include: [Farm, ChickenType] },
-//         { model: SaleTransaction, include: [Buyer, ChickenType] },
-//         { model: TransportLoss, include: [ChickenType] },
-//         { model: DailyCost, include: [CostCategory] },
-//         { model: ProfitDistribution, as: 'profit_distribution' } // استخدم الـ alias
-//       ],
-//       order: [['operation_date', 'DESC']]
-//     });
-
-//     let totals = {
-//       total_purchases: 0,
-//       total_sales: 0,
-//       total_losses: 0,
-//       total_costs: 0,
-//       total_profit: 0,
-//       days_operated: operations.length
-//     };
-
-//     operations.forEach(op => {
-//       op.FarmTransactions.forEach(t => totals.total_purchases += parseFloat(t.total_amount));
-//       op.SaleTransactions.forEach(t => totals.total_sales += parseFloat(t.total_amount));
-//       op.TransportLosses.forEach(l => totals.total_losses += parseFloat(l.loss_amount));
-//       op.DailyCosts.forEach(c => totals.total_costs += parseFloat(c.amount));
-//       if (op.profit_distribution) totals.total_profit += parseFloat(op.profit_distribution.net_profit);
-//     });
-
-//     res.json({
-//       success: true,
-//       data: { period: { from, to }, totals, operations }
-//     });
-//   } catch (error) {
-//     res.status(500).json({
-//       success: false,
-//       message: 'Error generating period report',
-//       error: error.message
-//     });
-//   }
-// };
-// ✅ UPDATED: Multi-vehicle period report
-// =========================
-// Enhanced Daily Report Controller
-// =========================
- 
-// exports.getEnhancedDailyReport = async (req, res) => {
-//   try {
-//     const { date } = req.params;
- 
-// let operations = await DailyOperation.findAll({
-//   where: { operation_date: date },
-//   subQuery: false,
-//   include: [
-//     {
-//       model: User,
-//       as: 'user',
-//       attributes: ['id', 'username', 'full_name']
-//     },
-//     {
-//       model: Vehicle,
-//       as: 'vehicles',
-//       through: { 
-//         attributes: ['status', 'created_at'],
-//         as: 'vehicle_operation_info'
-//       },
-//       include: [
-//         {
-//           model: Partner,
-//           as: 'partners',
-//           through: { 
-//             attributes: ['share_percentage'],
-//             as: 'vehicle_partner_info'
-//           }
-//         }
-//       ]
-//     },
-//     {
-//       model: ProfitDistribution,
-//       as: 'profit_distribution',
-//       include: [
-//         {
-//           model: PartnerProfit,
-//           as: 'partner_profits',
-//           include: [
-//             { 
-//               model: Partner, 
-//               as: 'partner',
-//               attributes: ['id', 'name', 'investment_percentage', 'is_vehicle_partner']
-//             }
-//           ]
-//         }
-//       ]
-//     }
-//   ]
-//  });
-  
-
-//     // ✅ STEP 2: Process each operation
-//     const enhancedReport = await Promise.all(
-//       operations.map(async (operation) => {
-        
-//         // Calculate profit data
-//         const profitData = await ProfitService.calculateDailyProfit(operation.id);
-
-//         // ========================================
-//         // 📦 FARM TRANSACTIONS DETAILS
-//         // ========================================
-//         const farmTransactions = await FarmTransaction.findAll({
-//           where: { daily_operation_id: operation.id },
-//           include: [
-//             { 
-//               model: Farm, 
-//               as: 'farm',
-//               attributes: ['id', 'name', 'owner_name', 'phone', 'current_balance']
-//             },
-//             { 
-//               model: ChickenType, 
-//               as: 'chicken_type',
-//               attributes: ['id', 'name']
-//             },
-//             {
-//               model: Vehicle,
-//               as: 'vehicle',
-//               attributes: ['id', 'name', 'plate_number']
-//             },
-//             {
-//               model: VehicleOperation,
-//               as: 'vehicle_operation',
-//               attributes: ['id', 'status']
-//             }
-//           ],
-//           order: [['sequence_number', 'ASC']]
-//         });
-
-//         const farmTransactionsDetails = farmTransactions.map(ft => {
-//           const totalAmount = parseFloat(ft.total_amount);
-//           const paidAmount = parseFloat(ft.paid_amount);
-//           const remainingAmount = parseFloat(ft.remaining_amount);
-//           const usedCredit = parseFloat(ft.used_credit || 0);
-          
-//           // Determine debt status with detailed breakdown
-//           let debtStatus = '';
-//           let debtStatusDetails = [];
-          
-//           // Check if cash was paid
-//           if (paidAmount > 0) {
-//             debtStatusDetails.push(`دفع نقدي: ${paidAmount.toFixed(2)} جنيه`);
-//           }
-          
-//           // Check if credit was used
-//           if (usedCredit > 0) {
-//             debtStatusDetails.push(`استخدم رصيد: ${usedCredit.toFixed(2)} جنيه`);
-//           }
-          
-//           // Check if there's remaining debt (we owe them)
-//           if (remainingAmount > 0) {
-//             debtStatusDetails.push(`دين جديد علينا: ${remainingAmount.toFixed(2)} جنيه`);
-//           }
-          
-//           // Build final status
-//           if (paidAmount >= totalAmount && usedCredit === 0) {
-//             debtStatus = 'دفع كامل نقداً';
-//           } else if (paidAmount + usedCredit >= totalAmount) {
-//             debtStatus = 'سدد كامل (نقد + رصيد)';
-//           } else {
-//             debtStatus = 'دفع جزئي';
-//           }
-          
-//           // Calculate balance change
-//           // used_credit reduces their RECEIVABLE (positive balance)
-//           // remaining_amount creates new PAYABLE (negative balance) - we owe them
-//           const balanceChange = -usedCredit - remainingAmount;
-
-//           return {
-//             transaction_id: ft.id,
-//             sequence_number: ft.sequence_number,
-//             farm: {
-//               id: ft.farm.id,
-//               name: ft.farm.name,
-//               owner_name: ft.farm.owner_name,
-//               phone: ft.farm.phone,
-//               current_balance: parseFloat(ft.farm.current_balance),
-//               balance_type: ft.farm.current_balance < 0 ? 'لهم علينا' : 
-//                            ft.farm.current_balance > 0 ? 'لنا عليهم' : 'متصفي'
-//             },
-//             chicken_type: {
-//               id: ft.chicken_type.id,
-//               name: ft.chicken_type.name
-//             },
-//             vehicle: {
-//               id: ft.vehicle.id,
-//               name: ft.vehicle.name,
-//               plate_number: ft.vehicle.plate_number
-//             },
-//             weighing: {
-//               empty_vehicle_weight: parseFloat(ft.empty_vehicle_weight),
-//               loaded_vehicle_weight: parseFloat(ft.loaded_vehicle_weight),
-//               cage_count: ft.cage_count,
-//               cage_weight_per_unit: parseFloat(ft.cage_weight_per_unit),
-//               total_cage_weight: ft.cage_count * parseFloat(ft.cage_weight_per_unit),
-//               net_chicken_weight: parseFloat(ft.net_chicken_weight)
-//             },
-//             pricing: {
-//               price_per_kg: parseFloat(ft.price_per_kg),
-//               total_amount: totalAmount,
-//               paid_amount: paidAmount,
-//               remaining_amount: remainingAmount,
-//               used_credit: usedCredit,
-//               total_paid_with_credit: paidAmount + usedCredit,
-//               payment_percentage: (((paidAmount + usedCredit) / totalAmount) * 100).toFixed(2) + '%'
-//             },
-//             debt_info: {
-//               status: debtStatus,
-//               status_details: debtStatusDetails,
-//               balance_change: balanceChange,
-//               breakdown: {
-//                 cash_paid: paidAmount,
-//                 credit_used: usedCredit,
-//                 new_debt_created: remainingAmount,
-//                 net_balance_impact: balanceChange
-//               },
-//               is_full_payment: (paidAmount + usedCredit) >= totalAmount,
-//               has_remaining_debt: remainingAmount > 0,
-//               used_existing_credit: usedCredit > 0,
-//               interpretation: balanceChange < 0 
-//                 ? `المزرعة دفعت ${Math.abs(balanceChange).toFixed(2)} جنيه من رصيدها`
-//                 : balanceChange > 0
-//                   ? `احنا مدينين للمزرعة بـ ${Math.abs(balanceChange).toFixed(2)} جنيه إضافي`
-//                   : 'لا يوجد تغيير في الرصيد'
-//             },
-//             transaction_time: ft.transaction_time,
-//             notes: ft.notes || null
-//           };
-//         });
-
-//         // ========================================
-//         // 🛒 SALE TRANSACTIONS DETAILS
-//         // ========================================
-//         const saleTransactions = await SaleTransaction.findAll({
-//           where: { daily_operation_id: operation.id },
-//           include: [
-//             { 
-//               model: Buyer, 
-//               as: 'buyer',
-//               attributes: ['id', 'name', 'phone', 'address', 'total_debt']
-//             },
-//             { 
-//               model: ChickenType, 
-//               as: 'chicken_type',
-//               attributes: ['id', 'name']
-//             },
-//             {
-//               model: Vehicle,
-//               as: 'vehicle',
-//               attributes: ['id', 'name', 'plate_number']
-//             },
-//             {
-//               model: VehicleOperation,
-//               as: 'vehicle_operation',
-//               attributes: ['id', 'status']
-//             }
-//           ],
-//           order: [['sequence_number', 'ASC']]
-//         });
-
-//         const saleTransactionsDetails = saleTransactions.map(st => {
-//           const totalAmount = parseFloat(st.total_amount);
-//           const paidAmount = parseFloat(st.paid_amount);
-//           const remainingAmount = parseFloat(st.remaining_amount);
-//           const oldDebtPaid = parseFloat(st.old_debt_paid || 0);
-          
-//           // Calculate buyer's debt change
-//           let buyerDebtChange = remainingAmount; // New debt
-//           if (oldDebtPaid > 0) {
-//             buyerDebtChange -= oldDebtPaid; // Reduced old debt
-//           }
-          
-//           // Determine payment status
-//           let paymentStatus = '';
-//           if (paidAmount >= totalAmount) {
-//             paymentStatus = 'دفع كامل';
-//           } else if (paidAmount > 0) {
-//             paymentStatus = 'دفع جزئي';
-//           } else {
-//             paymentStatus = 'لم يدفع';
-//           }
-          
-//           if (oldDebtPaid > 0) {
-//             paymentStatus += ` + سدد ${oldDebtPaid.toFixed(2)} من الدين القديم`;
-//           }
-
-//           return {
-//             transaction_id: st.id,
-//             sequence_number: st.sequence_number,
-//             buyer: {
-//               id: st.buyer.id,
-//               name: st.buyer.name,
-//               phone: st.buyer.phone,
-//               address: st.buyer.address,
-//               total_debt: parseFloat(st.buyer.total_debt),
-//               debt_status: st.buyer.total_debt > 0 ? 'مدين' : 'لا يوجد دين'
-//             },
-//             chicken_type: {
-//               id: st.chicken_type.id,
-//               name: st.chicken_type.name
-//             },
-//             vehicle: {
-//               id: st.vehicle.id,
-//               name: st.vehicle.name,
-//               plate_number: st.vehicle.plate_number
-//             },
-//             weighing: {
-//               loaded_cages_weight: parseFloat(st.loaded_cages_weight),
-//               empty_cages_weight: parseFloat(st.empty_cages_weight),
-//               cage_count: st.cage_count,
-//               net_chicken_weight: parseFloat(st.net_chicken_weight)
-//             },
-//             pricing: {
-//               price_per_kg: parseFloat(st.price_per_kg),
-//               total_amount: totalAmount,
-//               paid_amount: paidAmount,
-//               remaining_amount: remainingAmount,
-//               old_debt_paid: oldDebtPaid,
-//               payment_percentage: ((paidAmount / totalAmount) * 100).toFixed(2) + '%'
-//             },
-//             debt_info: {
-//               status: paymentStatus,
-//               buyer_debt_change: buyerDebtChange,
-//               is_full_payment: paidAmount >= totalAmount,
-//               has_remaining_debt: remainingAmount > 0,
-//               paid_old_debt: oldDebtPaid > 0,
-//               net_debt_impact: buyerDebtChange.toFixed(2)
-//             },
-//             transaction_time: st.transaction_time,
-//             notes: st.notes || null
-//           };
-//         });
-
-//         // ========================================
-//         // 🚨 TRANSPORT LOSSES DETAILS
-//         // ========================================
-//         const transportLosses = await TransportLoss.findAll({
-//           where: { daily_operation_id: operation.id },
-//           include: [
-//             { 
-//               model: ChickenType, 
-//               as: 'chicken_type',
-//               attributes: ['id', 'name']
-//             },
-//             {
-//               model: Vehicle,
-//               as: 'vehicle',
-//               attributes: ['id', 'name', 'plate_number']
-//             },
-//             {
-//               model: Farm,
-//               as: 'farm',
-//               attributes: ['id', 'name'],
-//               required: false
-//             },
-//             {
-//               model: VehicleOperation,
-//               as: 'vehicle_operation',
-//               attributes: ['id', 'status']
-//             }
-//           ],
-//           order: [['recorded_at', 'ASC']]
-//         });
-
-//         const transportLossesDetails = transportLosses.map(loss => {
-//           const lossAmount = parseFloat(loss.loss_amount);
-//           const deadWeight = parseFloat(loss.dead_weight);
-          
-//           // Check if loss is attributed to a farm
-//           const isFarmResponsible = loss.farm_id !== null;
-          
-//           let farmResponsibility = {};
-          
-//           if (isFarmResponsible) {
-//             farmResponsibility = {
-//               is_farm_responsible: true,
-//               farm: {
-//                 id: loss.farm.id,
-//                 name: loss.farm.name
-//               },
-//               balance_impact: {
-//                 amount: lossAmount,
-//                 direction: 'increases_receivable',
-//                 explanation: `المزرعة مسؤولة عن الخسارة، تم خصم ${lossAmount.toFixed(2)} جنيه من رصيدها (لنا عليهم)`,
-//                 note: 'الخسارة تُحمّل على المزرعة وتزيد من الدين اللي عليهم لينا'
-//               }
-//             };
-//           } else {
-//             farmResponsibility = {
-//               is_farm_responsible: false,
-//               note: 'خسارة عامة غير منسوبة لمزرعة محددة - تُخصم من الأرباح العامة'
-//             };
-//           }
-          
-//           return {
-//             loss_id: loss.id,
-//             chicken_type: {
-//               id: loss.chicken_type.id,
-//               name: loss.chicken_type.name
-//             },
-//             vehicle: {
-//               id: loss.vehicle.id,
-//               name: loss.vehicle.name,
-//               plate_number: loss.vehicle.plate_number
-//             },
-//             loss_details: {
-//               dead_weight: deadWeight,
-//               price_per_kg: parseFloat(loss.price_per_kg),
-//               loss_amount: lossAmount,
-//               location: loss.location || 'غير محدد'
-//             },
-//             farm_responsibility: farmResponsibility,
-//             recorded_at: loss.recorded_at,
-//             notes: loss.notes || null
-//           };
-//         });
-
-//         // ========================================
-//         // 💰 DAILY COSTS DETAILS
-//         // ========================================
-//         const dailyCosts = await DailyCost.findAll({
-//           where: { daily_operation_id: operation.id },
-//           include: [
-//             { 
-//               model: CostCategory, 
-//               as: 'category',
-//               attributes: ['id', 'name', 'description', 'is_vehicle_cost']
-//             },
-//             {
-//               model: Vehicle,
-//               as: 'vehicle',
-//               attributes: ['id', 'name', 'plate_number'],
-//               required: false
-//             },
-//             {
-//               model: VehicleOperation,
-//               as: 'vehicle_operation',
-//               attributes: ['id', 'status'],
-//               required: false
-//             }
-//           ],
-//           order: [['recorded_at', 'ASC']]
-//         });
-
-//         const dailyCostsDetails = dailyCosts.map(cost => {
-//           const isVehicleCost = cost.category.is_vehicle_cost;
-//           const hasSpecificVehicle = cost.vehicle_id !== null;
-          
-//           let costAllocation = '';
-//           if (isVehicleCost && hasSpecificVehicle) {
-//             costAllocation = `خاص بالعربية: ${cost.vehicle.name}`;
-//           } else if (isVehicleCost && !hasSpecificVehicle) {
-//             costAllocation = 'موزع على كل العربيات';
-//           } else {
-//             costAllocation = 'مصروف عام';
-//           }
-
-//           return {
-//             cost_id: cost.id,
-//             category: {
-//               id: cost.category.id,
-//               name: cost.category.name,
-//               description: cost.category.description,
-//               is_vehicle_cost: isVehicleCost,
-//               category_type: isVehicleCost ? 'مصروف عربية' : 'مصروف عام'
-//             },
-//             vehicle: cost.vehicle ? {
-//               id: cost.vehicle.id,
-//               name: cost.vehicle.name,
-//               plate_number: cost.vehicle.plate_number
-//             } : null,
-//             cost_details: {
-//               amount: parseFloat(cost.amount),
-//               description: cost.description || 'لا يوجد تفاصيل',
-//               allocation: costAllocation,
-//               affects_vehicle_partners: isVehicleCost
-//             },
-//             recorded_at: cost.recorded_at
-//           };
-//         });
-
-//         // Group costs by category
-//         const costsByCategory = dailyCostsDetails.reduce((acc, cost) => {
-//           const categoryName = cost.category.name;
-//           if (!acc[categoryName]) {
-//             acc[categoryName] = {
-//               category_info: cost.category,
-//               costs: [],
-//               total_amount: 0,
-//               count: 0
-//             };
-//           }
-//           acc[categoryName].costs.push(cost);
-//           acc[categoryName].total_amount += cost.cost_details.amount;
-//           acc[categoryName].count += 1;
-//           return acc;
-//         }, {});
-
-//         // ========================================
-//         // 📊 DEBT PAYMENTS (STANDALONE)
-//         // ========================================
-//         const farmDebtPayments = await FarmDebtPayment.findAll({
-//           where: { daily_operation_id: operation.id },
-//           include: [
-//             {
-//               model: Farm,
-//               as: 'farm',
-//               attributes: ['id', 'name', 'current_balance']
-//             }
-//           ]
-//         });
-
-//         const buyerDebtPayments = await BuyerDebtPayment.findAll({
-//           where: { daily_operation_id: operation.id },
-//           include: [
-//             {
-//               model: Buyer,
-//               as: 'buyer',
-//               attributes: ['id', 'name', 'total_debt']
-//             }
-//           ]
-//         });
-
-//         // ========================================
-//         // 📈 OPERATION SUMMARY
-//         // ========================================
-//         const summary = {
-//           operation_info: {
-//             operation_id: operation.id,
-//             operation_date: operation.operation_date,
-//             status: operation.status,
-//             user: {
-//               id: operation.user.id,
-//               username: operation.user.username,
-//               full_name: operation.user.full_name,
-//              },
-//             vehicles_count: operation.vehicles.length,
-//             vehicles: operation.vehicles.map(v => ({
-//               id: v.id,
-//               name: v.name,
-//               plate_number: v.plate_number,
-//               status: v.vehicle_operation_info?.status || 'ACTIVE',
-//               partners: v.partners?.map(p => ({
-//                 id: p.id,
-//                 name: p.name,
-//                 share_percentage: parseFloat(p.vehicle_partner_info?.share_percentage || 0)
-//               })) || []
-//             })),
-//             created_at: operation.created_at,
-//             closed_at: operation.closed_at
-//           },
-          
-//           financial_summary: {
-//             total_purchases: profitData.totalPurchases,
-//             total_revenue: profitData.totalRevenue,
-//             total_losses: profitData.totalLosses,
-//             total_costs: profitData.totalCosts,
-//             vehicle_costs: profitData.vehicleCosts,
-//             other_costs: profitData.otherCosts,
-//             net_profit: profitData.netProfit,
-//             profit_margin_percentage: profitData.totalRevenue > 0 
-//               ? ((profitData.netProfit / profitData.totalRevenue) * 100).toFixed(2) + '%'
-//               : '0.00%'
-//           },
-          
-//           transactions_summary: {
-//             farm_transactions: {
-//               count: farmTransactionsDetails.length,
-//               total_weight: farmTransactionsDetails.reduce((sum, ft) => 
-//                 sum + ft.weighing.net_chicken_weight, 0
-//               ),
-//               total_amount: farmTransactionsDetails.reduce((sum, ft) => 
-//                 sum + ft.pricing.total_amount, 0
-//               ),
-//               total_paid: farmTransactionsDetails.reduce((sum, ft) => 
-//                 sum + ft.pricing.paid_amount, 0
-//               ),
-//               total_remaining: farmTransactionsDetails.reduce((sum, ft) => 
-//                 sum + ft.pricing.remaining_amount, 0
-//               )
-//             },
-            
-//             sale_transactions: {
-//               count: saleTransactionsDetails.length,
-//               total_weight: saleTransactionsDetails.reduce((sum, st) => 
-//                 sum + st.weighing.net_chicken_weight, 0
-//               ),
-//               total_amount: saleTransactionsDetails.reduce((sum, st) => 
-//                 sum + st.pricing.total_amount, 0
-//               ),
-//               total_paid: saleTransactionsDetails.reduce((sum, st) => 
-//                 sum + st.pricing.paid_amount, 0
-//               ),
-//               total_remaining: saleTransactionsDetails.reduce((sum, st) => 
-//                 sum + st.pricing.remaining_amount, 0
-//               ),
-//               total_old_debt_collected: saleTransactionsDetails.reduce((sum, st) => 
-//                 sum + st.pricing.old_debt_paid, 0
-//               )
-//             },
-            
-//             losses: {
-//               count: transportLossesDetails.length,
-//               total_weight: transportLossesDetails.reduce((sum, loss) => 
-//                 sum + loss.loss_details.dead_weight, 0
-//               ),
-//               total_amount: transportLossesDetails.reduce((sum, loss) => 
-//                 sum + loss.loss_details.loss_amount, 0
-//               )
-//             },
-            
-//             costs: {
-//               count: dailyCostsDetails.length,
-//               total_amount: dailyCostsDetails.reduce((sum, cost) => 
-//                 sum + cost.cost_details.amount, 0
-//               ),
-//               vehicle_costs_total: dailyCostsDetails
-//                 .filter(c => c.category.is_vehicle_cost)
-//                 .reduce((sum, c) => sum + c.cost_details.amount, 0),
-//               other_costs_total: dailyCostsDetails
-//                 .filter(c => !c.category.is_vehicle_cost)
-//                 .reduce((sum, c) => sum + c.cost_details.amount, 0)
-//             }
-//           },
-          
-//           vehicle_breakdown: profitData.vehicleBreakdown?.map(vb => ({
-//             vehicle_id: vb.vehicle_id,
-//             vehicle_name: operation.vehicles.find(v => v.id === vb.vehicle_id)?.name || 'Unknown',
-//             purchases: vb.purchases,
-//             revenue: vb.revenue,
-//             losses: vb.losses,
-//             vehicle_costs: vb.vehicle_costs,
-//             other_costs: vb.other_costs,
-//             net_profit: vb.net_profit
-//           })) || []
-//         };
-
-//         // ========================================
-//         // 💼 PROFIT DISTRIBUTION
-//         // ========================================
-// //         const profitDistribution = operation.profit_distribution ? {
-// //           distribution_id: operation.profit_distribution.id,
-// //           calculated_at: operation.profit_distribution.calculated_at,
-// //           totals: {
-// //             total_revenue: parseFloat(operation.profit_distribution.total_revenue),
-// //             total_purchases: parseFloat(operation.profit_distribution.total_purchases),
-// //             total_losses: parseFloat(operation.profit_distribution.total_losses),
-// //             total_costs: parseFloat(operation.profit_distribution.total_costs),
-// //             vehicle_costs: parseFloat(operation.profit_distribution.vehicle_costs),
-// //             net_profit: parseFloat(operation.profit_distribution.net_profit)
-// //           },
-// //           partner_profits: operation.profit_distribution.partner_profits?.map(pp => ({
-// //             partner: {
-// //               id: pp.partner.id,
-// //               name: pp.partner.name,
-// //               investment_percentage: parseFloat(pp.partner.investment_percentage||pp.partner.get('investment_percentage')),
-// //               is_vehicle_partner: pp.partner.is_vehicle_partner
-// //             },
-// //             profit_breakdown: {
-// //               base_profit_share: parseFloat(pp.base_profit_share),
-// //               vehicle_cost_share: parseFloat(pp.vehicle_cost_share),
-// //               final_profit: parseFloat(pp.final_profit),
-// //               profit_percentage: operation.profit_distribution.net_profit > 0
-// //                 ? ((parseFloat(pp.final_profit) / parseFloat(operation.profit_distribution.net_profit)) * 100).toFixed(2) + '%'
-// //                 : '0.00%'
-// //             }
-// //           })) || []
-// //         } : null;
-// // console.log("operations",operation.profit_distribution.partner_profits[1].partner);
-// // ========================================
-// // 💼 PROFIT DISTRIBUTION
-// // ========================================
-// // ========================================
-// // 💼 PROFIT DISTRIBUTION
-// // ========================================
-// let profitDistribution = null;
-
-// if (operation.profit_distribution) {
-//   const plainDistribution = operation.profit_distribution.get ? 
-//     operation.profit_distribution.get({ plain: true }) : 
-//     operation.profit_distribution;
-
-//   // ✅ FETCH PARTNERS SEPARATELY to avoid nested include issues
-//   const partnerProfits = plainDistribution.partner_profits || [];
-  
-//   if (partnerProfits.length > 0) {
-//     const partnerIds = partnerProfits.map(pp => pp.partner_id);
-    
-//     // Fetch all partners at once with all attributes
-//     const partnersData = await Partner.findAll({
-//       where: { id: partnerIds },
-//       attributes: ['id', 'name', 'investment_percentage', 'is_vehicle_partner'],
-//       raw: true
-//     });
-    
-//     // Create a map for quick lookup
-//     const partnersMap = partnersData.reduce((map, p) => {
-//       map[p.id] = p;
-//       return map;
-//     }, {});
-
-//     profitDistribution = {
-//       distribution_id: plainDistribution.id,
-//       calculated_at: plainDistribution.calculated_at,
-//       totals: {
-//         total_revenue: parseFloat(plainDistribution.total_revenue),
-//         total_purchases: parseFloat(plainDistribution.total_purchases),
-//         total_losses: parseFloat(plainDistribution.total_losses),
-//         total_costs: parseFloat(plainDistribution.total_costs),
-//         vehicle_costs: parseFloat(plainDistribution.vehicle_costs),
-//         net_profit: parseFloat(plainDistribution.net_profit)
-//       },
-//       partner_profits: partnerProfits.map(pp => {
-//         const plainPP = pp.get ? pp.get({ plain: true }) : pp;
-//         const partner = partnersMap[plainPP.partner_id];
-        
-//         return {
-//           partner: {
-//             id: partner.id,
-//             name: partner.name,
-//             investment_percentage: parseFloat(partner.investment_percentage),
-//             is_vehicle_partner: partner.is_vehicle_partner
-//           },
-//           profit_breakdown: {
-//             base_profit_share: parseFloat(plainPP.base_profit_share),
-//             vehicle_cost_share: parseFloat(plainPP.vehicle_cost_share),
-//             final_profit: parseFloat(plainPP.final_profit),
-//             profit_percentage: plainDistribution.net_profit > 0
-//               ? ((parseFloat(plainPP.final_profit) / parseFloat(plainDistribution.net_profit)) * 100).toFixed(2) + '%'
-//               : '0.00%'
-//           }
-//         };
-//       })
-//     };
-//   } else {
-//     // No partner profits
-//     profitDistribution = {
-//       distribution_id: plainDistribution.id,
-//       calculated_at: plainDistribution.calculated_at,
-//       totals: {
-//         total_revenue: parseFloat(plainDistribution.total_revenue),
-//         total_purchases: parseFloat(plainDistribution.total_purchases),
-//         total_losses: parseFloat(plainDistribution.total_losses),
-//         total_costs: parseFloat(plainDistribution.total_costs),
-//         vehicle_costs: parseFloat(plainDistribution.vehicle_costs),
-//         net_profit: parseFloat(plainDistribution.net_profit)
-//       },
-//       partner_profits: []
-//     };
-//   }
-// }
-
-// // Remove the debug log after confirming it works
-
-// // Debug log (remove after confirming it works)
-// if (profitDistribution?.partner_profits?.[1]) {
-//   console.log("Partner investment_percentage:", profitDistribution.partner_profits[1].partner.investment_percentage);
-// }
-//         // ========================================
-//         // 🎯 RETURN COMPLETE REPORT
-//         // ========================================
-//         return {
-//           summary,
-          
-//           detailed_transactions: {
-//             farm_loading: {
-//               transactions: farmTransactionsDetails,
-//               summary: summary.transactions_summary.farm_transactions
-//             },
-            
-//             sales: {
-//               transactions: saleTransactionsDetails,
-//               summary: summary.transactions_summary.sale_transactions
-//             },
-            
-//             losses: {
-//               records: transportLossesDetails,
-//               summary: summary.transactions_summary.losses
-//             },
-            
-//             costs: {
-//               records: dailyCostsDetails,
-//               by_category: costsByCategory,
-//               summary: summary.transactions_summary.costs
-//             }
-//           },
-          
-//           debt_movements: {
-//             farm_payments: farmDebtPayments.map(fp => {
-//               const amount = parseFloat(fp.amount);
-//               const direction = fp.payment_direction;
-              
-//               let explanation = '';
-//               let balance_impact = 0;
-              
-//               if (direction === 'FROM_FARM') {
-//                 // Farm pays us → reduces RECEIVABLE (their debt to us)
-//                 explanation = `المزرعة دفعتلنا ${amount.toFixed(2)} جنيه من الدين اللي عليها`;
-//                 balance_impact = -amount; // Reduces positive balance
-//               } else {
-//                 // We pay farm → reduces PAYABLE (our debt to them)
-//                 explanation = `احنا دفعنا للمزرعة ${amount.toFixed(2)} جنيه من الدين اللي علينا`;
-//                 balance_impact = amount; // Reduces negative balance (moves toward zero)
-//               }
-              
-//               return {
-//                 payment_id: fp.id,
-//                 farm: {
-//                   id: fp.farm.id,
-//                   name: fp.farm.name,
-//                   current_balance: parseFloat(fp.farm.current_balance),
-//                   balance_display: fp.farm.current_balance <0 
-//                     ? `لهم علينا: ${fp.farm.current_balance.toFixed(2)} جنيه`
-//                     : fp.farm.current_balance >0
-//                       ? `لنا عليهم: ${Math.abs(fp.farm.current_balance).toFixed(2)} جنيه`
-//                       : 'متصفي'
-//                 },
-//                 payment_details: {
-//                   amount: amount,
-//                   direction: direction,
-//                   direction_arabic: direction === 'FROM_FARM' ? 'من المزرعة لينا' : 'مننا للمزرعة',
-//                   explanation: explanation,
-//                   balance_impact: balance_impact
-//                 },
-//                 payment_date: fp.payment_date,
-//                 notes: fp.notes,
-//                 is_standalone: true // This is NOT part of a loading transaction
-//               };
-//             }),
-            
-//             buyer_payments: buyerDebtPayments.map(bp => {
-//               const amount = parseFloat(bp.amount);
-              
-//               return {
-//                 payment_id: bp.id,
-//                 buyer: {
-//                   id: bp.buyer.id,
-//                   name: bp.buyer.name,
-//                   total_debt: parseFloat(bp.buyer.total_debt),
-//                   debt_display: bp.buyer.total_debt > 0
-//                     ? `مدين بـ ${parseFloat(bp.buyer.total_debt).toFixed(2)} جنيه`
-//                     : 'متصفي'
-//                 },
-//                 payment_details: {
-//                   amount: amount,
-//                   explanation: `المشتري دفع ${amount.toFixed(2)} جنيه من ديونه`,
-//                   balance_impact: -amount // Reduces buyer's debt
-//                 },
-//                 payment_date: bp.payment_date,
-//                 notes: bp.notes,
-//                 is_standalone: true // This is NOT part of a sale transaction
-//               };
-//             })
-//           },
-          
-//           profit_distribution: profitDistribution
-//         };
-//       })
-//     );
-
-//     // ========================================
-//     // 📤 SEND RESPONSE
-//     // ========================================
-//     console.log('repo',enhancedReport);
-    
-//     res.json({
-//       success: true,
-//       data: {
-//         report_date: date,
-//         operations_count: operations.length,
-//         report_generated_at: new Date(),
-//         operation: enhancedReport[0]
-//       }
-//     });
-
-//   } catch (error) {
-//     console.error('Error generating enhanced daily report:', error);
-//     res.status(500).json({
-//       success: false,
-//       message: 'حدث خطأ أثناء إنشاء التقرير اليومي',
-//       error: error.message
-//     });
-//   }
-// };
-
 exports.getEnhancedDailyReport = async (req, res) => {
   try {
     const { date } = req.params;
@@ -1552,7 +405,7 @@ consolidatedReport.summary.financial_summary.lossesWithoutFarm += profitData.los
           { 
             model: Buyer, 
             as: 'buyer',
-            attributes: ['id', 'name', 'phone', 'address', 'total_debt']
+            attributes: ['id', 'name', 'phone', 'address', 'current_balance']
           },
           { 
             model: ChickenType, 
@@ -1606,8 +459,8 @@ consolidatedReport.summary.financial_summary.lossesWithoutFarm += profitData.los
             name: st.buyer.name,
             phone: st.buyer.phone,
             address: st.buyer.address,
-            total_debt: parseFloat(st.buyer.total_debt),
-            debt_status: st.buyer.total_debt > 0 ? 'مدين' : 'لا يوجد دين'
+            current_balance: parseFloat(st.buyer.current_balance),
+            debt_status: st.buyer.current_balance > 0 ? 'مدين' : 'لا يوجد دين'
           },
           chicken_type: {
             id: st.chicken_type.id,
@@ -1905,7 +758,7 @@ consolidatedReport.summary.financial_summary.lossesWithoutFarm += profitData.los
           {
             model: Buyer,
             as: 'buyer',
-            attributes: ['id', 'name', 'total_debt']
+            attributes: ['id', 'name', 'current_balance']
           }
         ]
       });
@@ -1919,9 +772,9 @@ consolidatedReport.summary.financial_summary.lossesWithoutFarm += profitData.los
           buyer: {
             id: bp.buyer.id,
             name: bp.buyer.name,
-            total_debt: parseFloat(bp.buyer.total_debt),
-            debt_display: bp.buyer.total_debt > 0
-              ? `مدين بـ ${parseFloat(bp.buyer.total_debt).toFixed(2)} جنيه`
+            current_balance: parseFloat(bp.buyer.current_balance),
+            debt_display: bp.buyer.current_balance > 0
+              ? `مدين بـ ${parseFloat(bp.buyer.current_balance).toFixed(2)} جنيه`
               : 'متصفي'
           },
           payment_details: {
@@ -2518,21 +1371,21 @@ exports.getProfitLeakage = async (req, res) => {
 //   try {
 //     const farms = await Farm.findAll({
 //       where: {
-//         total_debt: {
+//         current_balance: {
 //           [Op.gt]: 0
 //         }
 //       },
-//       order: [['total_debt', 'DESC']]
+//       order: [['current_balance', 'DESC']]
 //     });
 
 //     const totalDebt = farms.reduce((sum, farm) => 
-//       sum + parseFloat(farm.total_debt), 0
+//       sum + parseFloat(farm.current_balance), 0
 //     );
 
 //     res.json({
 //       success: true,
 //       data: {
-//         total_debt: totalDebt,
+//         current_balance: totalDebt,
 //         farms_count: farms.length,
 //         farms
 //       }
@@ -2547,28 +1400,52 @@ exports.getProfitLeakage = async (req, res) => {
 
 exports.getBuyerDebtReport = async (req, res) => {
   try {
-    const buyers = await Buyer.findAll({
-      where: {
-        total_debt: {
-          [Op.gt]: 0
-        }
-      },
-      order: [['total_debt', 'DESC']]
-    });
-
-    const totalDebt = buyers.reduce((sum, buyer) => 
-      sum + parseFloat(buyer.total_debt), 0
-    );
+    const receivables = await Buyer.getReceivables();
+    const payables = await Buyer.getPayables();
+    const netPosition = await Buyer.getNetPosition();
 
     res.json({
       success: true,
       data: {
-        total_debt: totalDebt,
-        buyers_count: buyers.length,
-        buyers
+        report_type: 'COMBINED_BUYER_BALANCES',
+        summary: {
+          total_receivables: netPosition.total_receivables,
+          total_payables: netPosition.total_credits, // In Buyer it's total_credits
+          net_position: netPosition.net_position,
+          position_type: netPosition.position_type,
+          receivables_count: netPosition.receivables_count,
+          payables_count: netPosition.credits_count, // In Buyer it's credits_count
+          total_buyers_with_balance: netPosition.receivables_count + netPosition.credits_count
+        },
+        receivables: {
+          count: receivables.length,
+          buyers: receivables.map(b => ({
+            id: b.id,
+            name: b.name,
+            phone: b.phone,
+            address: b.address,
+            current_balance: parseFloat(b.current_balance),
+            balance_type: 'RECEIVABLE',
+            display_balance: `${parseFloat(b.current_balance).toFixed(2)} EGP`
+          }))
+        },
+        payables: {
+          count: payables.length,
+          buyers: payables.map(b => ({
+            id: b.id,
+            name: b.name,
+            phone: b.phone,
+            address: b.address,
+            current_balance: parseFloat(b.current_balance),
+            absolute_balance: Math.abs(parseFloat(b.current_balance)),
+            balance_type: 'PAYABLE',
+            display_balance: `${Math.abs(parseFloat(b.current_balance)).toFixed(2)} EGP`
+          }))
+        }
       }
     });
   } catch (error) {
+    console.error('Error generating buyer balances report:', error);
     res.status(500).json({
       success: false,
       message: 'Error generating buyer debt report'
@@ -2581,7 +1458,7 @@ exports.getBuyerDebtReport = async (req, res) => {
  * 
  * ACCOUNTING LOGIC:
  * -----------------
- * Buyer total_debt is ALWAYS ≥ 0 (we never owe buyers in this system)
+ * Buyer current_balance is ALWAYS ≥ 0 (we never owe buyers in this system)
  * 
  * Balance Flow:
  * - Opening Balance = Previous debt
@@ -2626,66 +1503,55 @@ exports.getBuyerStatement = async (req, res) => {
       if (end_date) paymentFilter.payment_date[Op.lte] = end_date;
     }
 
-    // ✅ Step 3: Get all sale transactions
-    const sales = await SaleTransaction.findAll({
-      where: {
-        buyer_id: buyerId,
-        ...saleFilter
-      },
-      include: [
-        { 
-          model: ChickenType, 
-          as: 'chicken_type', 
-          attributes: ['id', 'name'] 
-        },
-        { 
-          model: DailyOperation, 
-          as: 'operation', 
-          attributes: ['id', 'operation_date'] 
-        },
-        { 
-          model: Vehicle, 
-          as: 'vehicle', 
-          attributes: ['id', 'name', 'plate_number'] 
-        }
-      ],
-      order: [['transaction_time', 'ASC']]
+    // ✅ Step 3: Get All transactions from start_date until NOW (for backward reconstruction)
+    const recentSaleFilter = start_date ? { transaction_time: { [Op.gte]: start_date } } : {};
+    const recentPaymentFilter = start_date ? { payment_date: { [Op.gte]: start_date } } : {};
+
+    const [allRecentSales, allRecentPayments] = await Promise.all([
+      SaleTransaction.findAll({
+        where: { buyer_id: buyerId, ...recentSaleFilter },
+        include: [
+          { model: ChickenType, as: 'chicken_type', attributes: ['id', 'name'] },
+          { model: DailyOperation, as: 'operation', attributes: ['id', 'operation_date'] },
+          { model: Vehicle, as: 'vehicle', attributes: ['id', 'name', 'plate_number'] }
+        ],
+        order: [['transaction_time', 'ASC']]
+      }),
+      BuyerDebtPayment.findAll({
+        where: { buyer_id: buyerId, ...recentPaymentFilter },
+        include: [
+          { model: DailyOperation, as: 'operation', attributes: ['id', 'operation_date'], required: false }
+        ],
+        order: [['payment_date', 'ASC']]
+      })
+    ]);
+
+    // ✅ Step 4: Reconstruct Opening Balance Backwards from Current Balance
+    const currentDebt = parseFloat(buyer.current_balance) || 0;
+    let runningReconstruction = currentDebt;
+
+    // Reverse impact of sales (Subtract remaining, add old_debt_paid)
+    allRecentSales.forEach(s => {
+      runningReconstruction -= (parseFloat(s.remaining_amount) || 0);
+      runningReconstruction += (parseFloat(s.old_debt_paid) || 0);
     });
 
-    // ✅ Step 4: Get all standalone payments
-    const payments = await BuyerDebtPayment.findAll({
-      where: {
-        buyer_id: buyerId,
-        ...paymentFilter
-      },
-      include: [
-        { 
-          model: DailyOperation, 
-          as: 'operation', 
-          attributes: ['id', 'operation_date'], 
-          required: false 
-        }
-      ],
-      order: [['payment_date', 'ASC']]
+    // Reverse impact of payments (Add amount back to debt)
+    allRecentPayments.forEach(p => {
+      runningReconstruction += (parseFloat(p.amount) || 0);
     });
 
-    // ✅ Step 5: Calculate period totals
-    const newDebtInPeriod = sales.reduce((sum, s) => 
-      sum + parseFloat(s.remaining_amount), 0
-    );
-    
-    const oldDebtPaidInPeriod = sales.reduce((sum, s) => 
-      sum + parseFloat(s.old_debt_paid), 0
-    );
-    
-    const paymentsInPeriod = payments.reduce((sum, p) => 
-      sum + parseFloat(p.amount), 0
-    );
+    const openingBalance = runningReconstruction;
 
-    const currentDebt = parseFloat(buyer.total_debt) || 0;
+    // ✅ Step 5: Filter for Period Display
+    const dateStrTo = end_date || new Date().toISOString();
+    const sales = allRecentSales.filter(s => 
+      (!end_date || new Date(s.transaction_time) <= new Date(end_date))
+    ).sort((a, b) => new Date(a.transaction_time) - new Date(b.transaction_time));
 
-    // Opening = Current - New Debt + Payments Made
-    const openingBalance = currentDebt - newDebtInPeriod + oldDebtPaidInPeriod + paymentsInPeriod;
+    const payments = allRecentPayments.filter(p => 
+      (!end_date || new Date(p.payment_date) <= new Date(end_date))
+    ).sort((a, b) => new Date(a.payment_date) - new Date(b.payment_date));
 
     // ✅ Step 6: Build statement entries
     const allEntries = [];
@@ -2759,7 +1625,7 @@ exports.getBuyerStatement = async (req, res) => {
         amount: entry.amount,
         paid_now: entry.paid_now,
         balance_change: entry.balance_change,
-        running_balance: Math.max(0, runningBalance), // Never negative
+        running_balance: runningBalance, // Can be negative now (PAYABLE)
         reference_id: entry.reference_id,
         operation_date: entry.operation_date,
         vehicle: entry.vehicle
@@ -2786,14 +1652,14 @@ exports.getBuyerStatement = async (req, res) => {
           name: buyer.name,
           phone: buyer.phone,
           address: buyer.address,
-          current_debt: currentDebt
+          current_balance: currentDebt
         },
         period: {
           start_date: start_date || 'Beginning',
           end_date: end_date || 'Current'
         },
         summary: {
-          opening_balance: Math.max(0, openingBalance),
+          opening_balance: openingBalance,
           
           // Sales breakdown
           total_sales: totalSales,
@@ -2806,7 +1672,7 @@ exports.getBuyerStatement = async (req, res) => {
           total_payments: totalPayments,
           
           // Net change
-          net_change: newDebtInPeriod - totalPayments,
+          net_change: currentDebt - openingBalance,
           closing_balance: currentDebt,
           
           // Counts
@@ -2992,11 +1858,11 @@ exports.getFarmDebtReport = async (req, res) => {
       deprecated: true,
       message: 'This endpoint is deprecated. Use /api/reports/farm-receivables instead',
       data: {
-        total_debt: totalDebt,
+        current_balance: totalDebt,
         farms_count: farms.length,
         farms: farms.map(f => ({
           ...f.toJSON(),
-          total_debt: parseFloat(f.current_balance)  // Alias for backward compatibility
+          current_balance: parseFloat(f.current_balance)  // Alias for backward compatibility
         }))
       }
     });
@@ -3060,75 +1926,56 @@ exports.getFarmStatement = async (req, res) => {
       if (end_date) paymentFilter.payment_date[Op.lte] = end_date;
     }
 
-    // ========================================
-    // GET ALL TRANSACTIONS
-    // ========================================
+    // ✅ Step 3: Get All transactions from start_date until NOW (for backward reconstruction)
+    const recentTxFilter = start_date ? { transaction_time: { [Op.gte]: start_date } } : {};
+    const recentPaymentFilter = start_date ? { payment_date: { [Op.gte]: start_date } } : {};
 
-    const transactions = await FarmTransaction.findAll({
-      where: {
-        farm_id: farmId,
-        ...transactionFilter
-      },
-      include: [
-        { 
-          model: ChickenType, 
-          as: 'chicken_type', 
-          attributes: ['id', 'name'] 
-        },
-        { 
-          model: DailyOperation, 
-          as: 'operation', 
-          attributes: ['id', 'operation_date'] 
-        },
-        { 
-          model: Vehicle, 
-          as: 'vehicle', 
-          attributes: ['id', 'name', 'plate_number'] 
-        }
-      ],
-      order: [['transaction_time', 'ASC']]
-    });
+    const [allRecentTransactions, allRecentPayments] = await Promise.all([
+      FarmTransaction.findAll({
+        where: { farm_id: farmId, ...recentTxFilter },
+        include: [
+          { model: ChickenType, as: 'chicken_type', attributes: ['id', 'name'] },
+          { model: DailyOperation, as: 'operation', attributes: ['id', 'operation_date'] },
+          { model: Vehicle, as: 'vehicle', attributes: ['id', 'name', 'plate_number'] }
+        ],
+        order: [['transaction_time', 'ASC']]
+      }),
+      FarmDebtPayment.findAll({
+        where: { farm_id: farmId, ...recentPaymentFilter },
+        include: [
+          { model: DailyOperation, as: 'operation', attributes: ['id', 'operation_date'], required: false }
+        ],
+        order: [['payment_date', 'ASC']]
+      })
+    ]);
 
-    // ========================================
-    // GET ALL PAYMENTS
-    // ========================================
-
-    const payments = await FarmDebtPayment.findAll({
-      where: {
-        farm_id: farmId,
-        ...paymentFilter
-      },
-      include: [
-        { 
-          model: DailyOperation, 
-          as: 'operation', 
-          attributes: ['id', 'operation_date'], 
-          required: false 
-        }
-      ],
-      order: [['payment_date', 'ASC']]
-    });
-
-    // ========================================
-    // CALCULATE OPENING BALANCE
-    // ========================================
-
+    // ✅ Step 4: Reconstruct Opening Balance Backwards from Current Balance
     const currentBalance = parseFloat(farm.current_balance) || 0;
+    let runningReconstruction = currentBalance;
 
-    // Calculate net change in period
-    const purchasesImpact = transactions.reduce((sum, t) => {
-      const remaining = parseFloat(t.remaining_amount) || 0;
-      const credit = parseFloat(t.used_credit) || 0;
-      // Purchase creates debt (negative) but credit reduces it (positive)
-      return sum - remaining - credit;
-    }, 0);
+    // Reverse impact of purchases: Subtract impact
+    // impact = -remaining - credit
+    // reverse impact = +remaining + credit
+    allRecentTransactions.forEach(t => {
+      runningReconstruction += (parseFloat(t.remaining_amount) || 0);
+      runningReconstruction += (parseFloat(t.used_credit) || 0);
+    });
 
-    const paymentsImpact = payments.reduce((sum, p) => {
-      return sum + p.balanceImpact;
-    }, 0);
+    // Reverse impact of payments: Subtract balanceImpact
+    allRecentPayments.forEach(p => {
+      runningReconstruction -= p.balanceImpact;
+    });
 
-    const totalChangeInPeriod = purchasesImpact + paymentsImpact;
-    const openingBalance = currentBalance - totalChangeInPeriod;
+    const openingBalance = runningReconstruction;
+
+    // ✅ Step 5: Filter for Period Display
+    const transactions = allRecentTransactions.filter(t => 
+      (!end_date || new Date(t.transaction_time) <= new Date(end_date))
+    ).sort((a, b) => new Date(a.transaction_time) - new Date(b.transaction_time));
+
+    const payments = allRecentPayments.filter(p => 
+      (!end_date || new Date(p.payment_date) <= new Date(end_date))
+    ).sort((a, b) => new Date(a.payment_date) - new Date(b.payment_date));
 
     // ========================================
     // BUILD STATEMENT ENTRIES
@@ -3266,7 +2113,7 @@ exports.getFarmStatement = async (req, res) => {
           net_payments: paymentsReceived - paymentsMade,
           
           // Net change
-          net_change: totalChangeInPeriod,
+          net_change: currentBalance - openingBalance,
           closing_balance: currentBalance,
           closing_balance_type: farm.balanceType,
           
